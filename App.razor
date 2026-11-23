@@ -6,7 +6,7 @@
     <header class="masthead">
         <div class="brand">
             <div class="brand-mark" aria-hidden="true">⚓</div>
-            <div><h1>Blackwake</h1><p>Pirate campaign</p></div>
+            <div><h1>Last Buccaneer Standing</h1><p>Pirate campaign</p></div>
         </div>
         @if (campaign is { } game)
         {
@@ -96,7 +96,7 @@
 
     private void Engage()
     {
-        if (campaign!.HasCannon && campaign.IsThreat(campaign.Here)) battle = new(campaign);
+        if (campaign!.HasMannedCannon && campaign.IsThreat(campaign.Here)) battle = new(campaign);
     }
 
     private async Task Finish(Battle result)

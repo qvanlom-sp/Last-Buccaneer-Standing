@@ -5,13 +5,17 @@
 
 <section class="panel battle-panel" aria-labelledby="battle-heading">
     <div class="panel-heading">
-        <div><p class="eyebrow">@(Fight.IsMerchant ? "Merchant raid" : Fight.IsFort ? "Island siege" : "Pirate broadside")</p><h2 id="battle-heading">@Fight.Encounter.Name</h2></div>
+        <div>
+            <p class="eyebrow">@(Fight.IsMerchant ? "Merchant raid" : Fight.IsFort ? "Island siege" : "Pirate broadside")</p>
+            <h2 id="battle-heading">@Fight.Encounter.Name</h2>
+            <p>@EnemyProfile</p>
+        </div>
         <div class="moves"><strong>@Math.Max(0, (int)Math.Ceiling(Fight.Duration - Fight.Time))s</strong><span>@(Fight.IsMerchant ? $"{Fight.Loot} looted" : "remaining")</span></div>
     </div>
     <div class="battle-status">
-        <div><strong>Your hull · @Math.Ceiling(Fight.Hull) / @Fight.MaxHull</strong><progress value="@Fight.Hull" max="@Fight.MaxHull" aria-label="Your hull"></progress></div>
+        <div><strong>@Fight.Player.Ship.Name · @Math.Ceiling(Fight.Player.Hull) / @Fight.Player.MaxHull</strong><progress value="@Fight.Player.Hull" max="@Fight.Player.MaxHull" aria-label="Your hull"></progress></div>
         <span role="status">@Fight.Notice</span>
-        <div><strong>@(Fight.IsFort ? "Fort" : "Enemy hull") · @Math.Ceiling(Fight.EnemyHull) / @Fight.Encounter.Hull</strong><progress value="@Fight.EnemyHull" max="@Fight.Encounter.Hull" aria-label="Enemy hull"></progress></div>
+        <div><strong>@(Fight.IsFort ? "Fort" : "Enemy hull") · @Math.Ceiling(Fight.Enemy.Hull) / @Fight.Enemy.MaxHull</strong><progress value="@Fight.Enemy.Hull" max="@Fight.Enemy.MaxHull" aria-label="Enemy hull"></progress></div>
     </div>
     <div class="arena">
         <svg @ref="arena" viewBox="0 0 900 420" class="battlefield" aria-label="Cannon battle. Click to steer to a height.">
@@ -22,8 +26,7 @@
                 </pattern>
             </defs>
             <rect width="900" height="420" fill="url(#battle-water)" />
-            <path d="M140 0v420m620 -420v420" stroke="#52969c" stroke-opacity=".45" stroke-dasharray="6 8" />
-            @if (Math.Abs(Fight.TargetY - Fight.PlayerY) > 6)
+            @if (Math.Abs(Fight.TargetY - Fight.Player.Y) > 6)
             {
                 <path d="@FormattableString.Invariant($"M 24 {Fight.TargetY} h 109")" stroke="#f0b859" stroke-opacity=".65" stroke-dasharray="4 7" />
             }
@@ -35,41 +38,8 @@
                     <text y="4" text-anchor="middle">@GateLabel(gate.Kind)</text>
                 </g>
             }
-            <g transform="@Translate(82, Fight.PlayerY)" class="player-ship">
-                <path class="ship-wake" d="M-48 74q47 24 96 0M-56 83q56 26 112 0" />
-                <path class="ship-hull" d="M0 -86Q37 -60 39 -32V58L22 82H-22L-39 58V-32Q-37 -60 0 -86Z" />
-                <path class="ship-sail" d="M-22 -36Q0 -52 22 -36L19 -7Q0 -19 -19 -7ZM-17 12Q0 0 17 12L14 38Q0 31 -14 38Z" />
-            </g>
-            @if (Fight.IsFort)
-            {
-                <g transform="@Translate(821, Fight.EnemyY)" class="enemy-fort">
-                    <path class="island" d="M-66 -85Q-30 -116 33 -104L77 -76V80Q29 119 -37 95L-66 57Z" />
-                    <path class="fort-wall" d="M-42 -77H43V77H-42Z" />
-                    <path class="battlements" d="M-42 -77v154m29 -154v154m28 -154v154m28 -154v154" />
-                </g>
-            }
-            else
-            {
-                <g transform="@Translate(819, Fight.EnemyY)" class="@(Fight.IsMerchant ? "merchant-ship" : "enemy-ship")">
-                    <path class="ship-wake" d="M-48 74q47 24 96 0M-56 83q56 26 112 0" />
-                    <path class="ship-hull" d="M0 -86Q37 -60 39 -32V58L22 82H-22L-39 58V-32Q-37 -60 0 -86Z" />
-                    <path class="ship-sail" d="M-22 -36Q0 -52 22 -36L19 -7Q0 -19 -19 -7ZM-17 12Q0 0 17 12L14 38Q0 31 -14 38Z" />
-                </g>
-            }
-            @foreach (var gun in Fight.PlayerGuns)
-            {
-                <CannonGlyph @key="gun" Gun="gun" X="130" Y="@Battle.GunY(Fight.PlayerY, gun.Slot)" Player="true" />
-            }
-            @foreach (var gun in Fight.EnemyGuns)
-            {
-                <CannonGlyph @key="gun" Gun="gun" X="767" Y="@Battle.GunY(Fight.EnemyY, gun.Slot)" />
-            }
-            @foreach (var chest in Fight.Chests)
-            {
-                <g transform="@Translate(808, Battle.ChestY(Fight.EnemyY, chest.Slot))" class="chest @(chest.Health <= 0 ? "destroyed" : null)">
-                    <rect x="-12" y="-9" width="24" height="18" rx="3" /><path d="M-12 -1h24M0 -3v7" />
-                </g>
-            }
+            <VesselGlyph Vessel="Fight.Player" />
+            <VesselGlyph Vessel="Fight.Enemy" Fort="Fight.IsFort" Merchant="Fight.IsMerchant" />
             @foreach (var shot in Fight.Shots)
             {
                 <circle @key="shot.Id" class="shot @(shot.Speed < 0 ? "incoming" : "outgoing") @(shot.Burning ? "burning" : null)"
@@ -84,7 +54,7 @@
     <div class="battle-controls">
         <div class="steering">
             <button class="button" @onclick="() => Nudge(-40)" disabled="@paused">Up</button>
-            <label>Steering <input type="range" min="@Battle.MinY" max="@Battle.MaxY" value="@Number(Fight.TargetY)" @oninput="SteerRange" disabled="@paused" /></label>
+            <label>Steering <input type="range" min="@Number(Fight.Player.MinY)" max="@Number(Fight.Player.MaxY)" step=".5" value="@Number(Fight.TargetY)" @oninput="SteerRange" disabled="@paused" /></label>
             <button class="button" @onclick="() => Nudge(40)" disabled="@paused">Down</button>
         </div>
         <div class="battle-actions">
@@ -93,7 +63,7 @@
         </div>
     </div>
     <div class="chart-key">
-        <span>Tap the water or steer with W/S and ↑/↓. Cannons fire automatically.</span>
+        <span>Tap the water or steer with W/S and ↑/↓. Manned cannons fire automatically.</span>
         <span><b class="teal">×2</b> Damage</span><span><b class="violet">+1</b> Extra shot</span>
         <span><b class="gold">F</b> Ignite</span><span><b class="coral">×</b> Block</span>
     </div>
@@ -147,7 +117,7 @@
     [JSInvokable] public void SetDirection(int value) => direction = value;
     [JSInvokable] public void Steer(float y)
     {
-        if (!paused) Fight.TargetY = Math.Clamp(y, Battle.MinY, Battle.MaxY);
+        if (!paused) Fight.TargetY = Math.Clamp(y, Fight.Player.MinY, Fight.Player.MaxY);
     }
 
     private void TogglePause() => paused = !paused;
@@ -158,6 +128,17 @@
     }
 
     private static string Number(float value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+    private string EnemyProfile
+    {
+        get
+        {
+            var type = Fight.IsFort ? $"{Fight.Enemy.Ship.Decks}-level battery" : Fight.Enemy.Ship.Class;
+            var guns = Fight.Enemy.Guns.Count(gun => gun.CanFire);
+            var walls = Fight.Enemy.Barricades.Count(wall => wall.Health > 0);
+            var cargo = Fight.IsMerchant ? $" · {Fight.Enemy.Chests.Count(chest => chest.Health > 0)} chests" : "";
+            return $"{type} · {guns} {(guns == 1 ? "gun" : "guns")} · {walls} {(walls == 1 ? "barricade" : "barricades")}{cargo}";
+        }
+    }
     private static string Translate(float x, float y) => $"translate({Number(x)} {Number(y)})";
     private static string GateLabel(GateKind kind) => kind switch
     {

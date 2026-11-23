@@ -2,7 +2,7 @@ namespace Blackwake.Game;
 
 public enum EncounterKind { Water, Base, Merchant, Pirate, Fort, Overlord }
 public sealed record Region(string Name, string Color);
-public sealed record Encounter(EncounterKind Kind, string Name, int Hull, int Reward, int Difficulty);
+public sealed record Encounter(EncounterKind Kind, string Name, int Reward, int Difficulty);
 public sealed record SeaTile(int Id, int Column, int Row, int Region, Encounter Encounter)
 {
     public int X => 425 + (Column - Row) * 51;
@@ -27,8 +27,8 @@ public sealed class SeaChart
         [(3, 4), (4, 1), (4, 5), (5, 3)],
         [(6, 2), (7, 5), (7, 1), (8, 3)]
     ];
-    private static readonly Encounter Water = new(EncounterKind.Water, "Open water", 0, 0, 0);
-    private static readonly Encounter HomePort = new(EncounterKind.Base, "Smuggler's Rest", 0, 0, 0);
+    private static readonly Encounter Water = new(EncounterKind.Water, "Open water", 0, 0);
+    private static readonly Encounter HomePort = new(EncounterKind.Base, "Smuggler's Rest", 0, 0);
     private static readonly string[] Overlords = ["Captain Cinder", "Admiral Voss", "The Widow Queen"];
     private static readonly string[] Forts = ["Saltwatch Fort", "Giltstone Battery", "Graveshore Keep"];
     private static readonly string[] Pirates = ["The Ragged Jackal", "The Brass Viper", "The Hollow Crown"];
@@ -42,10 +42,10 @@ public sealed class SeaChart
         {
             Encounter[] roster =
             [
-                new(EncounterKind.Merchant, Merchants[region], 120 + region * 45, 0, region),
-                new(EncounterKind.Pirate, Pirates[region], 96 + region * 54, 70 + region * 30, region),
-                new(EncounterKind.Fort, Forts[region], 122 + region * 54, 105 + region * 35, region),
-                new(EncounterKind.Overlord, Overlords[region], 142 + region * 68, 165 + region * 60, region)
+                new(EncounterKind.Merchant, Merchants[region], 0, region),
+                new(EncounterKind.Pirate, Pirates[region], 70 + region * 30, region),
+                new(EncounterKind.Fort, Forts[region], 105 + region * 35, region),
+                new(EncounterKind.Overlord, Overlords[region], 165 + region * 60, region)
             ];
             random.Shuffle(roster);
             for (var i = 0; i < roster.Length; i++)

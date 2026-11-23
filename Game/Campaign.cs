@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Blackwake.Game;
 
 public enum CannonKind { Roundshot, Heavy, Scatter, Fire }
-public enum UpgradeKind { Hull, Powder, GunCrew, Helmsman }
+public enum UpgradeKind { Hull, Rigging }
 
 public sealed record CannonSpec(string Name, string Description, int Cost, float Damage, float Reload, float Speed);
 public sealed record UpgradeSpec(string Name, string Description, int Cost);
@@ -12,11 +12,15 @@ public sealed class CampaignSave
 {
     public int Seed { get; set; } = Random.Shared.Next();
     public int Day { get; set; } = 1;
-    public int Moves { get; set; } = Campaign.DailyMoves;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Moves { get; set; }
+    public int SailedToday { get; set; }
     public int Gold { get; set; } = 145;
     public int Position { get; set; } = SeaChart.Home;
     public int BaseCamp { get; set; } = SeaChart.Home;
-    public CannonKind?[] Layout { get; set; } = [null, CannonKind.Roundshot, CannonKind.Roundshot, null, null];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CannonKind?[]? Layout { get; set; }
+    public Loadout? Loadout { get; set; }
     public int[] Stock { get; set; } = [2, 0, 0, 0];
     public int[] Upgrades { get; set; } = [0, 0, 0, 0];
     public HashSet<int> Revealed { get; set; } = [];
@@ -31,7 +35,6 @@ public sealed record BattleReport(string Title, string Detail);
 
 public sealed class Campaign
 {
-    public const int DailyMoves = 7;
     public const int MaxUpgrade = 3;
     public static readonly CannonSpec[] Cannons =
     [
@@ -42,78 +45,127 @@ public sealed class Campaign
     ];
     public static readonly UpgradeSpec[] Improvements =
     [
-        new("Reinforced hull", "+30 maximum hull per level", 60),
-        new("Powder stores", "+20% shot damage per level", 65),
-        new("Gun crew", "12% shorter reload per level", 55),
-        new("Helmsman", "+40 steering speed per level", 45)
+        new("Reinforced hull", "+18% base hull per level", 60),
+        new("Improved rigging", "+12% base steering and sailing speed per level", 45)
     ];
 
     public Campaign(CampaignSave? save = null)
     {
         Save = save ?? new();
         Chart = new(Save.Seed);
+        Save.Loadout ??= MigrateLoadout();
         Reveal();
     }
 
     public CampaignSave Save { get; }
     public SeaChart Chart { get; }
     public SeaTile Here => Chart.Tiles[Save.Position];
+    public Loadout Loadout => Save.Loadout!;
+    public ShipSpec Ship => Shipyard.GetShip(Loadout.Ship);
+    public bool AtBasecamp => Here.Encounter.Kind == EncounterKind.Base ||
+        Here.Encounter.Kind == EncounterKind.Fort && Save.Cleared.Contains(Here.Id);
+    public BasecampMarket? Market => AtBasecamp ? Shipyard.GetMarket(Here) : null;
     public bool IsThreat(SeaTile tile) => tile.Encounter.Kind >= EncounterKind.Merchant && !Save.Cleared.Contains(tile.Id);
     public bool Controls(int region) => Save.Cleared.Any(id =>
         Chart.Tiles[id].Region == region && Chart.Tiles[id].Encounter.Kind == EncounterKind.Overlord);
     public int Conquered => Enumerable.Range(0, SeaChart.Regions.Length).Count(Controls);
-    public int Hull => 130 + 30 * Level(UpgradeKind.Hull);
+    public int Hull => (int)Math.Round(Ship.Hull * (1 + .18 * Level(UpgradeKind.Hull)));
+    private double SpeedScale => 1 + .12 * Level(UpgradeKind.Rigging);
+    public int Speed => (int)Math.Round(Ship.Speed * SpeedScale);
+    public int DailyMoves => (int)Math.Round(Ship.Moves * SpeedScale, MidpointRounding.AwayFromZero);
+    public int MovesLeft => Math.Max(0, DailyMoves - Save.SailedToday);
     public int Level(UpgradeKind upgrade) => Save.Upgrades[(int)upgrade];
     public int UpgradeCost(UpgradeKind upgrade) => Improvements[(int)upgrade].Cost + Level(upgrade) * 40;
-    public int Available(CannonKind cannon) => Save.Stock[(int)cannon] - Save.Layout.Count(item => item == cannon);
-    public bool HasCannon => Save.Layout.Any(item => item.HasValue);
+    public int Available(CannonKind cannon) => Save.Stock[(int)cannon] - Loadout.Mounts.Count(mount => mount.Cannon == cannon);
+    public int AvailableBarricades => Loadout.Barricades - Loadout.Mounts.Count(mount => mount.Barricade);
+    public int MannedCannons => Loadout.Mounts.Count(mount => mount.GunnerId.HasValue);
+    public bool HasMannedCannon => MannedCannons > 0;
+    public DeckMount? MountAt(DeckPosition position) => Loadout.Mounts.Find(mount => mount.Position == position);
 
-    public bool CanSail(int destination) => Save.Moves > 0 && Chart.Neighbors(Save.Position).Contains(destination);
+    public bool CanSail(int destination) => MovesLeft > 0 && Chart.Neighbors(Save.Position).Contains(destination);
 
     public bool Sail(int destination)
     {
         if (!CanSail(destination)) return false;
         Save.Position = destination;
-        Save.Moves--;
+        Save.SailedToday++;
         Save.Report = null;
         Reveal();
-        if (Here.Encounter.Kind == EncounterKind.Base ||
-            Here.Encounter.Kind == EncounterKind.Fort && Save.Cleared.Contains(destination))
-        {
-            Save.BaseCamp = destination;
-        }
+        if (AtBasecamp) Save.BaseCamp = destination;
         return true;
     }
 
     public void NextDay()
     {
         Save.Day++;
-        Save.Moves = DailyMoves;
+        Save.SailedToday = 0;
     }
 
     public bool Buy(CannonKind cannon)
     {
-        var cost = Cannons[(int)cannon].Cost;
-        if (Save.Gold < cost) return false;
-        Save.Gold -= cost;
+        if (!PayAtBasecamp(Cannons[(int)cannon].Cost)) return false;
         Save.Stock[(int)cannon]++;
-        var slot = Array.IndexOf(Save.Layout, null);
-        if (slot >= 0) Save.Layout[slot] = cannon;
         return true;
     }
 
-    public bool Fit(int slot, CannonKind? cannon)
+    public bool BuyBarricade()
     {
-        if (cannon is { } selected && Save.Layout[slot] != cannon && Available(selected) <= 0) return false;
-        Save.Layout[slot] = cannon;
+        if (!PayAtBasecamp(Shipyard.BarricadeCost)) return false;
+        Loadout.Barricades++;
+        return true;
+    }
+
+    public bool Fit(DeckPosition position, CannonKind? cannon, bool barricade = false)
+    {
+        if (!Ship.Contains(position)) return false;
+        var current = MountAt(position);
+        if (barricade && current?.Barricade != true && AvailableBarricades <= 0 ||
+            cannon is { } kind && current?.Cannon != kind && Available(kind) <= 0) return false;
+        if (current is not null) Loadout.Mounts.Remove(current);
+        if (barricade) Loadout.Mounts.Add(new(position, null, true));
+        else if (cannon.HasValue) Loadout.Mounts.Add(new(position, cannon, GunnerId: current?.GunnerId));
+        return true;
+    }
+
+    public bool Assign(DeckPosition position, int? pirate)
+    {
+        if (MountAt(position) is not { Cannon: not null } mount ||
+            pirate is { } id && !Loadout.Crew.Contains(id)) return false;
+        for (var index = 0; index < Loadout.Mounts.Count; index++)
+        {
+            var item = Loadout.Mounts[index];
+            if (item == mount) Loadout.Mounts[index] = item with { GunnerId = pirate };
+            else if (pirate.HasValue && item.GunnerId == pirate) Loadout.Mounts[index] = item with { GunnerId = null };
+        }
+        return true;
+    }
+
+    public bool Hire(int pirate)
+    {
+        var recruit = Market?.Recruits.FirstOrDefault(card => card.Id == pirate);
+        if (recruit is null || Loadout.Crew.Contains(pirate) || !PayAtBasecamp(recruit.Cost)) return false;
+        Loadout.Crew.Add(pirate);
+        return true;
+    }
+
+    public bool Commission(ShipKind ship)
+    {
+        if (Market?.Ship != ship || Loadout.Fleet.Contains(ship) || !PayAtBasecamp(Shipyard.GetShip(ship).Cost)) return false;
+        Loadout.Fleet.Add(ship);
+        return SwitchShip(ship);
+    }
+
+    public bool SwitchShip(ShipKind ship)
+    {
+        if (!AtBasecamp || !Loadout.Fleet.Contains(ship)) return false;
+        Loadout.Ship = ship;
+        Loadout.Mounts.RemoveAll(mount => !Ship.Contains(mount.Position));
         return true;
     }
 
     public bool Upgrade(UpgradeKind upgrade)
     {
-        var cost = UpgradeCost(upgrade);
-        if (Save.Gold < cost || Level(upgrade) >= MaxUpgrade) return false;
-        Save.Gold -= cost;
+        if (Level(upgrade) >= MaxUpgrade || !PayAtBasecamp(UpgradeCost(upgrade))) return false;
         Save.Upgrades[(int)upgrade]++;
         return true;
     }
@@ -151,5 +203,38 @@ public sealed class Campaign
     {
         Save.Revealed.Add(Save.Position);
         foreach (var neighbor in Chart.Neighbors(Save.Position)) Save.Revealed.Add(neighbor);
+    }
+
+    private bool PayAtBasecamp(int cost)
+    {
+        if (!AtBasecamp || Save.Gold < cost) return false;
+        Save.Gold -= cost;
+        return true;
+    }
+
+    private Loadout MigrateLoadout()
+    {
+        var loadout = new Loadout();
+        var legacyLayout = Save.Layout ?? [null, CannonKind.Roundshot, CannonKind.Roundshot, null, null];
+        DeckPosition[] positions = [new(0, 0, 0), new(1, 0, 0), new(1, 1, 0), new(1, 2, 0), new(0, 2, 0)];
+        var nextGunner = 0;
+        for (var slot = 0; slot < legacyLayout.Length && slot < positions.Length; slot++)
+        {
+            if (legacyLayout[slot] is not { } cannon) continue;
+            int? gunner = nextGunner < loadout.Crew.Count ? loadout.Crew[nextGunner++] : null;
+            loadout.Mounts.Add(new(positions[slot], cannon, GunnerId: gunner));
+        }
+
+        if (Save.Upgrades.Length >= 4)
+        {
+            // Retired upgrades are refunded at the original purchase prices.
+            for (var level = 0; level < Save.Upgrades[1]; level++) Save.Gold += 65 + 40 * level;
+            for (var level = 0; level < Save.Upgrades[2]; level++) Save.Gold += 55 + 40 * level;
+            Save.Upgrades = [Save.Upgrades[0], Save.Upgrades[3]];
+        }
+        if (Save.Moves is { } remaining) Save.SailedToday = Math.Max(0, 7 - remaining);
+        Save.Layout = null;
+        Save.Moves = null;
+        return loadout;
     }
 }

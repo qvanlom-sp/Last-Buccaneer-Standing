@@ -1,4 +1,4 @@
-name: Deploy Blackwake to GitHub Pages
+name: Deploy Last Buccaneer Standing to GitHub Pages
 
 on:
   push:

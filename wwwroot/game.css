@@ -102,18 +102,44 @@ p { color: var(--muted); }
 .map-marker.pirate text, .map-marker.overlord text { fill: var(--coral); }
 .player-marker path { fill: var(--gold); stroke: #482f11; }
 .player-marker text { fill: #32210d; font-size: 11px; }
-.deck-plan { padding: 1.35rem; background: #0c2831; }
-.deck-ship {
-    min-height: 7rem; background: #3b3329; border: 2px solid #946d46; border-radius: 48% 21% 21% 48%;
-    display: flex; align-items: center; justify-content: space-evenly; color: #e9bd88; margin-bottom: 1.15rem;
-}
-.deck-ship > div { display: flex; gap: clamp(.25rem, 2vw, 1.3rem); }
-.deck-ship i { display: grid; place-items: center; width: clamp(1.65rem, 4vw, 2.8rem); aspect-ratio: 1; border-radius: 50%; border: 1px dashed #a68058; font-style: normal; }
-.deck-ship .mounted { color: var(--gold); background: #573f28; border-style: solid; }
-.slot-list { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .55rem; }
+.ship-readout { display: flex; flex-wrap: wrap; gap: .35rem 1.1rem; padding: 0 1.15rem .9rem; color: var(--muted); }
+.ship-readout b { color: var(--teal); }
+.deck-plan { padding: .85rem 1.15rem; background: #0c2831; }
+.deck-controls { display: flex; flex-wrap: wrap; gap: .5rem; }
+.deck-tab[aria-pressed="true"] { color: var(--gold); border-color: #aa8452; }
+.ship-grid { display: block; width: 100%; max-height: 25rem; margin: 0 auto; }
+.ship-grid-water { stroke: #5da0ab; stroke-opacity: .3; stroke-width: 2; }
+.grid-deck.inactive { opacity: .34; pointer-events: none; }
+.grid-top { fill: #705235; stroke: #d0a16d; }
+.grid-side { fill: #423226; stroke: #a6784e; }
+.deck-cell { cursor: pointer; }
+.deck-cell:is(:hover, :focus-visible, .chosen) .grid-top { fill: #956e43; stroke: #ffe2a3; stroke-width: 2; }
+.grid-gun { fill: #142c34; stroke: #d1d7d3; }
+.grid-gunner { fill: var(--teal); stroke: #0b2027; }
+.grid-wall { fill: #3f514b; stroke: #b5ded0; }
+.grid-labels { fill: #a4bcbc; font-size: 15px; }
+.grid-labels path { fill: none; stroke: currentColor; opacity: .45; }
+.deck-help, .mount-note { color: var(--muted); font-size: .91rem; }
+.mount-note { margin-top: .65rem; }
+.mount-editor { padding: .9rem 1.15rem 1.15rem; }
+.mount-editor h3, .outfitter-market h3 { margin: 0 0 .55rem; font-size: 1rem; }
+.mount-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .65rem; }
 .slot span { display: block; margin-bottom: .3rem; color: var(--muted); font-size: .88rem; }
 .slot select { width: 100%; padding: .45rem .25rem; color: var(--ink); background: #142d36; border: 1px solid #45656b; border-radius: 7px; }
-.panel-note { padding: .8rem 1.15rem; }
+.outfitter-market .game-nav { margin: .8rem 0 .6rem; flex-wrap: wrap; gap: .25rem; }
+.outfitter-market .nav-tab { padding-inline: .6rem; }
+.outfitter-market .market-heading { margin-top: 1rem; }
+.pirate-card { padding: .7rem .8rem; margin-top: .6rem; border: 1px solid #37545a; border-radius: 8px; background: #122b32; }
+.pirate-card-heading { display: flex; justify-content: space-between; align-items: start; gap: .75rem; }
+.pirate-card small { color: var(--muted); display: block; }
+.pirate-rating { min-width: 3rem; text-align: right; }
+.pirate-rating b { color: var(--gold); font: 700 1.2rem Georgia, serif; }
+.pirate-card p { margin-top: .35rem; font-size: .88rem; }
+.pirate-card dl { display: flex; flex-wrap: wrap; gap: .45rem 1.1rem; margin: .55rem 0 0; }
+.pirate-card dl > div { display: flex; gap: .3rem; align-items: baseline; }
+.pirate-card dt { color: var(--muted); font-size: .84rem; }
+.pirate-card dd { color: var(--teal); font-weight: 700; font-size: .86rem; margin: 0; }
+.pirate-card .button { margin-top: .65rem; }
 .shop-row { display: flex; gap: .55rem; justify-content: space-between; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--line); }
 .shop-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .shop-row small { display: block; color: var(--muted); }
@@ -152,7 +178,15 @@ p { color: var(--muted); }
 .cannon circle, .cannon-barrel { fill: #1a252b; stroke: currentColor; stroke-width: 1.4; }
 .cannon .gun-health { fill: currentColor; }
 .cannon.destroyed { opacity: .42; }
+.cannon.unmanned { color: #a5ada7; }
 .cannon.destroyed path { stroke: currentColor; stroke-width: 2; }
+.battle-barricade rect { fill: #4b6560; stroke: #a5e2cf; }
+.battle-barricade path { stroke: #a5e2cf; }
+.battle-barricade .wall-health { fill: var(--teal); stroke: none; }
+.battle-barricade.hostile rect { fill: #6c4d40; stroke: #ffad8d; }
+.battle-barricade.hostile path { stroke: #ffad8d; }
+.battle-barricade.hostile .wall-health { fill: var(--coral); stroke: none; }
+.battle-barricade.destroyed { opacity: .28; }
 .chest rect { fill: #aa6e34; stroke: #ffe293; stroke-width: 2; }
 .chest path { stroke: #ffe293; stroke-width: 2; }
 .chest.destroyed { opacity: .22; }
@@ -171,7 +205,6 @@ p { color: var(--muted); }
     .metrics div { flex: 1; }
     .chart { min-width: auto; }
     .chart-key, .panel-heading { padding-inline: .65rem; }
-    .slot-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .battle-status { grid-template-columns: 1fr 1fr; font-size: .8rem; padding-inline: .65rem; }
     .battle-status > span { grid-column: 1 / -1; grid-row: 2; }
     .battle-controls { padding-inline: .65rem; }

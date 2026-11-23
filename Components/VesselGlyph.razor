@@ -1,0 +1,53 @@
+<g class="battle-vessel">
+    @if (Fort)
+    {
+        <g transform="@HullTransform" class="enemy-fort">
+            <path class="island" d="M-56 -85Q-29 -109 36 -101L83 -74V82Q32 112 -32 96L-56 55Z" />
+            <path class="fort-wall" d="M-40 -77H44V77H-40Z" />
+            <path class="battlements" d="M-39 -75v150m27 -150v150m28 -150v150m27 -150v150" />
+        </g>
+    }
+    else
+    {
+        <g transform="@HullTransform" class="@(Vessel.IsPlayer ? "player-ship" : Merchant ? "merchant-ship" : "enemy-ship")">
+            <path class="ship-wake" d="M-48 74q47 24 96 0M-56 83q56 26 112 0" />
+            <path class="ship-hull" d="M0 -86Q37 -60 39 -32V58L22 82H-22L-39 58V-32Q-37 -60 0 -86Z" />
+            <path class="ship-sail" d="M-22 -36Q0 -52 22 -36L19 -7Q0 -19 -19 -7ZM-17 12Q0 0 17 12L14 38Q0 31 -14 38Z" />
+        </g>
+    }
+    @foreach (var gun in Vessel.Guns)
+    {
+        <CannonGlyph @key="gun" Gun="gun" Y="@(Vessel.Y + gun.Lane)" Player="Vessel.IsPlayer" />
+    }
+    @foreach (var wall in Vessel.Barricades)
+    {
+        <g @key="wall" class="battle-barricade @(Vessel.IsPlayer ? "friendly" : "hostile") @(wall.Health <= 0 ? "destroyed" : null)"
+           transform="@Position(wall)">
+            <title>Barricade · @Math.Ceiling(wall.Health) / @wall.MaxHealth HP</title>
+            <rect x="-5" y="-7" width="10" height="14" rx="2" />
+            <path d="M-5 -4h10m-10 8h10" />
+            @if (wall.Health > 0)
+            {
+                <rect class="wall-health" x="-6" y="9" width="@HealthWidth(wall)" height="2" />
+            }
+        </g>
+    }
+    @foreach (var chest in Vessel.Chests)
+    {
+        <g @key="chest" transform="@Position(chest)" class="chest @(chest.Health <= 0 ? "destroyed" : null)">
+            <title>Treasure chest · @chest.Gold doubloons</title>
+            <rect x="-8" y="-8" width="16" height="16" rx="3" /><path d="M-8 -1h16M0 -3v7" />
+        </g>
+    }
+</g>
+
+@code {
+    [Parameter, EditorRequired] public CombatVessel Vessel { get; set; } = default!;
+    [Parameter] public bool Fort { get; set; }
+    [Parameter] public bool Merchant { get; set; }
+
+    private string HullTransform => FormattableString.Invariant(
+        $"translate({Vessel.CenterX:0.##} {Vessel.Y:0.##}) scale({Vessel.XScale:0.##} {Vessel.Radius / 84:0.##})");
+    private string Position(CombatPart part) => FormattableString.Invariant($"translate({part.X:0.##} {Vessel.Y + part.Lane:0.##})");
+    private static string HealthWidth(CombatPart part) => FormattableString.Invariant($"{12 * part.Health / part.MaxHealth:0.##}");
+}

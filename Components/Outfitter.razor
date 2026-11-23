@@ -1,62 +1,162 @@
 <div class="dashboard outfit">
-    <section class="panel chart-panel">
+    <section class="panel chart-panel" aria-labelledby="outfitter-heading">
         <div class="panel-heading">
-            <div><h2>Fit your broadside</h2><p>Mount cannons in any of the five slots. Slot placement sets the height of each shot.</p></div>
-            <div class="moves"><strong>@Game.Hull</strong><span>max hull</span></div>
+            <div><p class="eyebrow">@Game.Ship.Class</p><h2 id="outfitter-heading">@Game.Ship.Name</h2></div>
+            <div class="moves"><strong>@Game.MannedCannons</strong><span>manned guns</span></div>
+        </div>
+        <div class="ship-readout" aria-label="Ship stats">
+            <span><b>@Game.Hull</b> hull</span><span><b>@Game.Speed</b> steering speed</span>
+            <span><b>@Game.DailyMoves</b> moves / day</span>
         </div>
         <div class="deck-plan">
-            <div class="deck-ship" aria-hidden="true">
-                <span>Bow</span><div>@foreach (var cannon in Game.Save.Layout) { <i class="@(cannon.HasValue ? "mounted" : null)">@(cannon.HasValue ? "●" : "○")</i> }</div><span>Stern</span>
-            </div>
-            <div class="slot-list">
-                @for (var index = 0; index < Game.Save.Layout.Length; index++)
+            <div class="deck-controls" aria-label="Ship decks">
+                @for (var index = 0; index < Game.Ship.Decks; index++)
                 {
-                    var slot = index;
+                    var deck = index;
+                    <button class="button deck-tab" aria-pressed="@(selected.Deck == deck)" @onclick="() => SelectDeck(deck)">Deck @(deck + 1)</button>
+                }
+            </div>
+            <ShipGrid Game="Game" Selected="selected" OnSelect="SelectCell" />
+            <p class="deck-help">Select a cell to fit equipment. Place barricades outboard of your cannons to catch enemy fire.</p>
+        </div>
+        <div class="mount-editor">
+            <h3>Deck @(selected.Deck + 1) · Row @(selected.Row + 1) · @(selected.Column == Game.Ship.Columns - 1 ? "Outboard" : $"Column {selected.Column + 1}")</h3>
+            <div class="mount-fields">
+                <label class="slot">
+                    <span>Equipment</span>
+                    <select value="@Equipment" @onchange="Fit">
+                        <option value="">Empty</option>
+                        <option value="wall" selected="@(Equipment == "wall")" disabled="@(Equipment != "wall" && Game.AvailableBarricades == 0)">Barricade</option>
+                        @foreach (var kind in Enum.GetValues<CannonKind>())
+                        {
+                            var installed = Mount?.Cannon == kind;
+                            <option value="@kind" selected="@installed" disabled="@(!installed && Game.Available(kind) == 0)">
+                                @Campaign.Cannons[(int)kind].Name
+                            </option>
+                        }
+                    </select>
+                </label>
+                @if (Mount?.Cannon is not null)
+                {
                     <label class="slot">
-                        <span>Mount @(slot + 1)</span>
-                        <select value="@Game.Save.Layout[slot]?.ToString()" @onchange="args => Fit(slot, args)">
-                            <option value="">Empty</option>
-                            @foreach (var kind in Enum.GetValues<CannonKind>())
+                        <span>Gunner</span>
+                        <select value="@Mount.GunnerId" @onchange="Assign">
+                            <option value="">Unmanned</option>
+                            @foreach (var id in Game.Loadout.Crew)
                             {
-                                var equipped = Game.Save.Layout[slot] == kind;
-                                <option value="@kind" selected="@equipped" disabled="@(!equipped && Game.Available(kind) == 0)">
-                                    @Campaign.Cannons[(int)kind].Name
-                                </option>
+                                var pirate = Shipyard.GetPirate(id);
+                                <option value="@id" selected="@(Mount?.GunnerId == id)">@pirate.Name (@pirate.Overall.ToString("0.#"))</option>
                             }
                         </select>
                     </label>
                 }
             </div>
+            @if (Mount?.Cannon is not null && Mount.GunnerId is null)
+            {
+                <p class="mount-note">Assign a gunner to fire this cannon.</p>
+            }
+            else if (Mount?.GunnerId is { } gunner)
+            {
+                <PirateCardView Card="Shipyard.GetPirate(gunner)" />
+            }
         </div>
-        <p class="panel-note">New cannons fill the first free mount. If every mount is occupied, the purchase goes into reserve.</p>
     </section>
 
-    <aside class="chart-side">
-        <section class="panel side-panel shop">
-            <h2>Cannons</h2>
-            @foreach (var kind in Enum.GetValues<CannonKind>())
+    <aside class="panel side-panel outfitter-market">
+        <p class="eyebrow">Quartermaster</p>
+        <h2>@(Game.AtBasecamp ? Game.Here.Encounter.Name : "At sea")</h2>
+        @if (!Game.AtBasecamp)
+        {
+            <p>Return to any basecamp to shop, hire, upgrade, or change ships. You can refit owned equipment and reassign crew at sea.</p>
+        }
+        <nav class="game-nav" aria-label="Quartermaster">
+            @foreach (var section in Enum.GetValues<MarketSection>())
             {
-                var spec = Campaign.Cannons[(int)kind];
-                <div class="shop-row">
-                    <div><strong>@spec.Name</strong><small>@spec.Description · @Game.Available(kind) in reserve</small></div>
-                    <button class="button" disabled="@(Game.Save.Gold < spec.Cost)" @onclick="() => Buy(kind)" aria-label="Buy @spec.Name for @spec.Cost doubloons">@spec.Cost</button>
-                </div>
+                <button class="nav-tab @(market == section ? "selected" : null)" aria-pressed="@(market == section)"
+                        @onclick="() => market = section">@section</button>
             }
-        </section>
-        <section class="panel side-panel shop">
-            <h2>Ship &amp; crew</h2>
-            @foreach (var kind in Enum.GetValues<UpgradeKind>())
-            {
-                var spec = Campaign.Improvements[(int)kind];
-                var cost = Game.UpgradeCost(kind);
-                var level = Game.Level(kind);
+        </nav>
+        @switch (market)
+        {
+            case MarketSection.Supplies:
+                @foreach (var kind in Enum.GetValues<CannonKind>())
+                {
+                    var spec = Campaign.Cannons[(int)kind];
+                    <div class="shop-row">
+                        <div><strong>@spec.Name</strong><small>@spec.Description · @Game.Available(kind) in reserve</small></div>
+                        <button class="button" disabled="@(!Game.AtBasecamp || Game.Save.Gold < spec.Cost)"
+                                @onclick="() => Change(Game.Buy(kind))" aria-label="Buy @spec.Name for @spec.Cost doubloons">@spec.Cost</button>
+                    </div>
+                }
                 <div class="shop-row">
-                    <div><strong>@spec.Name <span class="level">@level/@Campaign.MaxUpgrade</span></strong><small>@spec.Description</small></div>
-                    <button class="button" disabled="@(Game.Save.Gold < cost || level >= Campaign.MaxUpgrade)" @onclick="() => Upgrade(kind)"
-                            aria-label="Upgrade @spec.Name for @cost doubloons">@(level >= Campaign.MaxUpgrade ? "Max" : cost.ToString())</button>
+                    <div><strong>Barricade</strong><small>@Shipyard.BarricadeHealth HP · @Game.AvailableBarricades in reserve</small></div>
+                    <button class="button" disabled="@(!Game.AtBasecamp || Game.Save.Gold < Shipyard.BarricadeCost)"
+                            @onclick="() => Change(Game.BuyBarricade())" aria-label="Buy barricade for @Shipyard.BarricadeCost doubloons">@Shipyard.BarricadeCost</button>
                 </div>
-            }
-        </section>
+                break;
+            case MarketSection.Crew:
+                <h3>Your crew</h3>
+                @foreach (var id in Game.Loadout.Crew)
+                {
+                    var station = Game.Loadout.Mounts.Find(item => item.GunnerId == id);
+                    <PirateCardView @key="id" Card="Shipyard.GetPirate(id)"
+                                    Status="@(station is null ? "Available" : $"Deck {station.Position.Deck + 1}, row {station.Position.Row + 1}, column {station.Position.Column + 1}")" />
+                }
+                @if (Game.Market is not null)
+                {
+                    <h3 class="market-heading">Local recruits</h3>
+                    var recruits = Game.Market.Recruits.Where(card => !Game.Loadout.Crew.Contains(card.Id)).ToArray();
+                    @if (recruits.Length == 0)
+                    {
+                        <p>Everyone here has joined your crew.</p>
+                    }
+                    @foreach (var recruit in recruits)
+                    {
+                        <PirateCardView @key="recruit.Id" Card="recruit">
+                            <button class="button" disabled="@(Game.Save.Gold < recruit.Cost)"
+                                    @onclick="() => Change(Game.Hire(recruit.Id))"
+                                    aria-label="Hire @recruit.Name for @recruit.Cost doubloons">Hire · @recruit.Cost</button>
+                        </PirateCardView>
+                    }
+                }
+                break;
+            case MarketSection.Ships:
+                <h3>Your fleet</h3>
+                @foreach (var kind in Game.Loadout.Fleet)
+                {
+                    var ship = Shipyard.GetShip(kind);
+                    <div class="shop-row" @key="kind">
+                        <div><strong>@ship.Name</strong><small>@ShipDetails(ship)</small></div>
+                        <button class="button" disabled="@(!Game.AtBasecamp || Game.Ship.Kind == kind)"
+                                @onclick="() => UseShip(kind, false)">@(Game.Ship.Kind == kind ? "Active" : "Switch")</button>
+                    </div>
+                }
+                @if (Game.Market is { } shipMarket && !Game.Loadout.Fleet.Contains(shipMarket.Ship))
+                {
+                    var ship = Shipyard.GetShip(shipMarket.Ship);
+                    <h3 class="market-heading">Local shipwright</h3>
+                    <div class="shop-row">
+                        <div><strong>@ship.Name</strong><small>@ShipDetails(ship)</small></div>
+                        <button class="button" disabled="@(Game.Save.Gold < ship.Cost)"
+                                @onclick="() => UseShip(ship.Kind, true)" aria-label="Buy @ship.Name for @ship.Cost doubloons">@ship.Cost</button>
+                    </div>
+                }
+                <p class="mount-note">Equipment that fits moves to the new ship. Gear outside its grid goes into reserve.</p>
+                <h3 class="market-heading">Fleet upgrades</h3>
+                @foreach (var kind in Enum.GetValues<UpgradeKind>())
+                {
+                    var spec = Campaign.Improvements[(int)kind];
+                    var level = Game.Level(kind);
+                    var cost = Game.UpgradeCost(kind);
+                    <div class="shop-row">
+                        <div><strong>@spec.Name <span class="level">@level/@Campaign.MaxUpgrade</span></strong><small>@spec.Description</small></div>
+                        <button class="button" disabled="@(!Game.AtBasecamp || Game.Save.Gold < cost || level >= Campaign.MaxUpgrade)"
+                                @onclick="() => Change(Game.Upgrade(kind))"
+                                aria-label="Upgrade @spec.Name for @cost doubloons">@(level >= Campaign.MaxUpgrade ? "Max" : cost.ToString())</button>
+                    </div>
+                }
+                break;
+        }
     </aside>
 </div>
 
@@ -64,19 +164,33 @@
     [Parameter, EditorRequired] public Campaign Game { get; set; } = default!;
     [Parameter] public EventCallback Changed { get; set; }
 
-    private async Task Fit(int slot, ChangeEventArgs args)
+    private enum MarketSection { Supplies, Crew, Ships }
+    private MarketSection market;
+    private DeckPosition selected = new(1, 0, 0);
+    private DeckMount? Mount => Game.MountAt(selected);
+    private string Equipment => Mount is { Barricade: true } ? "wall" : Mount?.Cannon?.ToString() ?? "";
+
+    private void SelectCell(DeckPosition cell) => selected = cell;
+    private void SelectDeck(int deck) => selected = selected with { Deck = deck };
+
+    private Task Fit(ChangeEventArgs args)
     {
-        var cannon = Enum.TryParse<CannonKind>(args.Value?.ToString(), out var selected) ? (CannonKind?)selected : null;
-        if (Game.Fit(slot, cannon)) await Changed.InvokeAsync();
+        var value = args.Value?.ToString();
+        var cannon = Enum.TryParse<CannonKind>(value, out var kind) ? (CannonKind?)kind : null;
+        return Change(Game.Fit(selected, cannon, value == "wall"));
     }
 
-    private async Task Buy(CannonKind cannon)
+    private Task Assign(ChangeEventArgs args) =>
+        Change(Game.Assign(selected, int.TryParse(args.Value?.ToString(), out var id) ? id : null));
+
+    private Task UseShip(ShipKind kind, bool buy)
     {
-        if (Game.Buy(cannon)) await Changed.InvokeAsync();
+        if (!(buy ? Game.Commission(kind) : Game.SwitchShip(kind))) return Task.CompletedTask;
+        if (!Game.Ship.Contains(selected)) selected = new(Game.Ship.Columns - 1, 0, 0);
+        return Changed.InvokeAsync();
     }
 
-    private async Task Upgrade(UpgradeKind upgrade)
-    {
-        if (Game.Upgrade(upgrade)) await Changed.InvokeAsync();
-    }
+    private Task Change(bool changed) => changed ? Changed.InvokeAsync() : Task.CompletedTask;
+    private static string ShipDetails(ShipSpec ship) =>
+        $"{ship.Class} · {ship.Columns}×{ship.Rows}×{ship.Decks} grid · {ship.Hull} base HP · {ship.Speed} base speed";
 }

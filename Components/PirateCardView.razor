@@ -1,0 +1,18 @@
+<article class="pirate-card" aria-label="@Card.Name pirate card">
+    <div class="pirate-card-heading">
+        <div><strong>@Card.Name</strong>@if (Status is not null) { <small>@Status</small> }</div>
+        <div class="pirate-rating"><b>@Card.Overall.ToString("0.#")</b><small>Overall</small></div>
+    </div>
+    <p>@Card.Bio</p>
+    <dl>
+        <div><dt>Swiftness</dt><dd>@Card.Swiftness / 100</dd></div>
+        <div><dt>Accuracy</dt><dd>@Card.Accuracy / 100</dd></div>
+    </dl>
+    @ChildContent
+</article>
+
+@code {
+    [Parameter, EditorRequired] public PirateCard Card { get; set; } = default!;
+    [Parameter] public string? Status { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
