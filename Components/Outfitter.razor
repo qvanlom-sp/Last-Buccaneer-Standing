@@ -1,0 +1,82 @@
+<div class="dashboard outfit">
+    <section class="panel chart-panel">
+        <div class="panel-heading">
+            <div><h2>Fit your broadside</h2><p>Mount cannons in any of the five slots. Slot placement sets the height of each shot.</p></div>
+            <div class="moves"><strong>@Game.Hull</strong><span>max hull</span></div>
+        </div>
+        <div class="deck-plan">
+            <div class="deck-ship" aria-hidden="true">
+                <span>Bow</span><div>@foreach (var cannon in Game.Save.Layout) { <i class="@(cannon.HasValue ? "mounted" : null)">@(cannon.HasValue ? "●" : "○")</i> }</div><span>Stern</span>
+            </div>
+            <div class="slot-list">
+                @for (var index = 0; index < Game.Save.Layout.Length; index++)
+                {
+                    var slot = index;
+                    <label class="slot">
+                        <span>Mount @(slot + 1)</span>
+                        <select value="@Game.Save.Layout[slot]?.ToString()" @onchange="args => Fit(slot, args)">
+                            <option value="">Empty</option>
+                            @foreach (var kind in Enum.GetValues<CannonKind>())
+                            {
+                                var equipped = Game.Save.Layout[slot] == kind;
+                                <option value="@kind" selected="@equipped" disabled="@(!equipped && Game.Available(kind) == 0)">
+                                    @Campaign.Cannons[(int)kind].Name
+                                </option>
+                            }
+                        </select>
+                    </label>
+                }
+            </div>
+        </div>
+        <p class="panel-note">New cannons fill the first free mount. If every mount is occupied, the purchase goes into reserve.</p>
+    </section>
+
+    <aside class="chart-side">
+        <section class="panel side-panel shop">
+            <h2>Cannons</h2>
+            @foreach (var kind in Enum.GetValues<CannonKind>())
+            {
+                var spec = Campaign.Cannons[(int)kind];
+                <div class="shop-row">
+                    <div><strong>@spec.Name</strong><small>@spec.Description · @Game.Available(kind) in reserve</small></div>
+                    <button class="button" disabled="@(Game.Save.Gold < spec.Cost)" @onclick="() => Buy(kind)" aria-label="Buy @spec.Name for @spec.Cost doubloons">@spec.Cost</button>
+                </div>
+            }
+        </section>
+        <section class="panel side-panel shop">
+            <h2>Ship &amp; crew</h2>
+            @foreach (var kind in Enum.GetValues<UpgradeKind>())
+            {
+                var spec = Campaign.Improvements[(int)kind];
+                var cost = Game.UpgradeCost(kind);
+                var level = Game.Level(kind);
+                <div class="shop-row">
+                    <div><strong>@spec.Name <span class="level">@level/@Campaign.MaxUpgrade</span></strong><small>@spec.Description</small></div>
+                    <button class="button" disabled="@(Game.Save.Gold < cost || level >= Campaign.MaxUpgrade)" @onclick="() => Upgrade(kind)"
+                            aria-label="Upgrade @spec.Name for @cost doubloons">@(level >= Campaign.MaxUpgrade ? "Max" : cost.ToString())</button>
+                </div>
+            }
+        </section>
+    </aside>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Campaign Game { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task Fit(int slot, ChangeEventArgs args)
+    {
+        var cannon = Enum.TryParse<CannonKind>(args.Value?.ToString(), out var selected) ? (CannonKind?)selected : null;
+        if (Game.Fit(slot, cannon)) await Changed.InvokeAsync();
+    }
+
+    private async Task Buy(CannonKind cannon)
+    {
+        if (Game.Buy(cannon)) await Changed.InvokeAsync();
+    }
+
+    private async Task Upgrade(UpgradeKind upgrade)
+    {
+        if (Game.Upgrade(upgrade)) await Changed.InvokeAsync();
+    }
+}

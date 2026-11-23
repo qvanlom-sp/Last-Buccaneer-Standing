@@ -1,0 +1,131 @@
+<div class="dashboard">
+    <section class="panel chart-panel" aria-labelledby="chart-heading">
+        <div class="panel-heading">
+            <div><h2 id="chart-heading">The open ocean</h2><p>Select an outlined tile to spend one move and reveal nearby waters.</p></div>
+            <div class="moves"><strong>@Game.Save.Moves / @Campaign.DailyMoves</strong><span>moves left</span></div>
+        </div>
+        <div class="chart-scroll">
+            <svg class="chart" viewBox="0 0 900 422" aria-label="Isometric sea chart">
+                <defs>
+                    <pattern id="chart-grid" width="30" height="30" patternUnits="userSpaceOnUse">
+                        <path d="M 30 0 H 0 V 30" fill="none" stroke="#1c424b" stroke-opacity=".45" />
+                    </pattern>
+                </defs>
+                <rect width="900" height="422" fill="url(#chart-grid)" />
+                <g class="compass" transform="translate(68 74)" aria-hidden="true">
+                    <circle r="24" fill="none" stroke="currentColor" stroke-opacity=".35" />
+                    <path d="M0 -31 5 -5 31 0 5 5 0 31 -5 5 -31 0 -5 -5Z" fill="none" stroke="currentColor" />
+                    <path d="M0 -31 5 -5 0 0 -5 -5Z" fill="currentColor" />
+                    <text y="-39" text-anchor="middle">N</text>
+                </g>
+                @foreach (var tile in Game.Chart.Tiles.OrderBy(tile => tile.Row + tile.Column))
+                {
+                    var revealed = Game.Save.Revealed.Contains(tile.Id);
+                    var reachable = Game.CanSail(tile.Id);
+                    var here = tile.Id == Game.Save.Position;
+                    var cleared = Game.Save.Cleared.Contains(tile.Id);
+                    var region = SeaChart.Regions[tile.Region];
+                    var label = $"{tile.Encounter.Name}, {region.Name}";
+                    <g @key="tile.Id" transform="translate(@tile.X @tile.Y)" class="@TileClass(revealed, reachable, here)"
+                       style="--region:@region.Color" role="@(reachable ? "button" : null)" tabindex="@(reachable ? 0 : null)"
+                       aria-label="@(reachable ? $"Sail to {label}" : null)" aria-hidden="@(!reachable ? "true" : null)"
+                       @onclick="() => Select(tile.Id, reachable)" @onkeydown="args => KeySelect(args, tile.Id, reachable)">
+                        @if (revealed)
+                        {
+                            <title>@label</title>
+                        }
+                        <path class="tile-shape" d="M0 -23 49 0 0 23 -49 0Z"/>
+                        @if (!revealed)
+                        {
+                            <path class="fog-mark" d="M-13 -2h21m-13 5h19" />
+                        }
+                        else if (tile.Encounter.Kind == EncounterKind.Water)
+                        {
+                            <path class="wave-mark" d="M-13 3q4 4 8 0 4 4 8 0m-2 -6q4 4 8 0 4 4 8 0" />
+                        }
+                        else
+                        {
+                            <g class="map-marker @(cleared ? "cleared" : tile.Encounter.Kind.ToString().ToLowerInvariant())">
+                                <circle r="12" /><text y="4" text-anchor="middle">@Symbol(tile.Encounter.Kind, cleared)</text>
+                            </g>
+                        }
+                        @if (here)
+                        {
+                            <g class="player-marker">
+                                <path d="M0 -24 14 -18 10 -6 0 1 -10 -6 -14 -18Z" />
+                                <text y="-11" text-anchor="middle">▲</text>
+                            </g>
+                        }
+                    </g>
+                }
+            </svg>
+        </div>
+        <div class="chart-key">
+            <span><b class="gold">▲</b> Your ship</span><span><b class="teal">◆</b> Merchant</span>
+            <span><b class="coral">✦</b> Rival</span><span><b>▣</b> Fort or base</span><span><b class="coral">♛</b> Overlord</span>
+        </div>
+    </section>
+
+    <aside class="chart-side">
+        <section class="panel side-panel">
+            <p class="eyebrow">Current position</p>
+            <h2>@Game.Here.Encounter.Name</h2>
+            <p>@SeaChart.Regions[Game.Here.Region].Name</p>
+            @if (Game.IsThreat(Game.Here))
+            {
+                <p class="encounter-detail">@EncounterHint(Game.Here.Encounter)</p>
+                <button class="button primary" disabled="@(!Game.HasCannon)" @onclick="Engage">@(Game.Here.Encounter.Kind == EncounterKind.Merchant ? "Raid merchant" : "Engage in battle")</button>
+                @if (!Game.HasCannon) { <p>Fit a cannon at the outfitter first.</p> }
+            }
+            else
+            {
+                <p class="encounter-detail">Basecamp · @Game.Chart.Tiles[Game.Save.BaseCamp].Encounter.Name</p>
+            }
+            <button class="button" @onclick="NextDay">End day</button>
+        </section>
+
+        <section class="panel side-panel">
+            <h2>Territory</h2>
+            <ul class="region-list">
+                @for (var index = 0; index < SeaChart.Regions.Length; index++)
+                {
+                    var region = SeaChart.Regions[index];
+                    var controlled = Game.Controls(index);
+                    <li><span><i style="background:@region.Color"></i>@region.Name</span><small>@(controlled ? "Conquered" : "Hostile")</small></li>
+                }
+            </ul>
+            <p>Defeat each regional overlord to raise your flag.</p>
+        </section>
+        @if (Game.Save.Report is { } report)
+        {
+            <div class="report" role="status"><strong>@report.Title</strong><span>@report.Detail</span></div>
+        }
+    </aside>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Campaign Game { get; set; } = default!;
+    [Parameter] public EventCallback<int> Sail { get; set; }
+    [Parameter] public EventCallback NextDay { get; set; }
+    [Parameter] public EventCallback Engage { get; set; }
+
+    private Task Select(int id, bool reachable) => reachable ? Sail.InvokeAsync(id) : Task.CompletedTask;
+    private Task KeySelect(KeyboardEventArgs args, int id, bool reachable) =>
+        args.Key == "Enter" ? Select(id, reachable) : Task.CompletedTask;
+    private static string TileClass(bool revealed, bool reachable, bool here) =>
+        $"tile {(revealed ? "revealed" : "fog")} {(reachable ? "reachable" : "")} {(here ? "here" : "")}";
+    private static string Symbol(EncounterKind kind, bool cleared) => cleared ? "✓" : kind switch
+    {
+        EncounterKind.Merchant => "◆",
+        EncounterKind.Overlord => "♛",
+        EncounterKind.Pirate => "✦",
+        _ => "▣"
+    };
+    private static string EncounterHint(Encounter encounter) => encounter.Kind switch
+    {
+        EncounterKind.Merchant => "Lightly guarded cargo. Break the chests before the raid ends.",
+        EncounterKind.Fort => $"Land batteries guard a new basecamp. Victory pays {encounter.Reward} doubloons.",
+        EncounterKind.Overlord => $"Win to conquer this region and claim {encounter.Reward} doubloons.",
+        _ => $"A rival broadside stands between you and {encounter.Reward} doubloons."
+    };
+}

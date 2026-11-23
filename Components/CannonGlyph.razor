@@ -1,0 +1,22 @@
+<g class="cannon @(Player ? "friendly" : "hostile") @(Gun.Health <= 0 ? "destroyed" : null)" transform="@Position">
+    <rect class="cannon-barrel" x="@(Player ? -6 : -15)" y="-4" width="21" height="8" rx="2" />
+    <circle r="7" />
+    @if (Gun.Health <= 0)
+    {
+        <path d="M-5 -5 5 5m0 -10 -10 10" />
+    }
+    else
+    {
+        <rect class="gun-health" x="-10" y="11" width="@HealthWidth" height="2" />
+    }
+</g>
+
+@code {
+    [Parameter, EditorRequired] public Gun Gun { get; set; } = default!;
+    [Parameter] public float X { get; set; }
+    [Parameter] public float Y { get; set; }
+    [Parameter] public bool Player { get; set; }
+
+    private string Position => FormattableString.Invariant($"translate({X:0.##} {Y:0.##})");
+    private string HealthWidth => FormattableString.Invariant($"{20 * Gun.Health / Gun.MaxHealth:0.##}");
+}

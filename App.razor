@@ -1,0 +1,139 @@
+@using System.Text.Json
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<main class="game-shell">
+    <header class="masthead">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">⚓</div>
+            <div><h1>Blackwake</h1><p>Pirate campaign</p></div>
+        </div>
+        @if (campaign is { } game)
+        {
+            <div class="metrics" aria-label="Campaign status">
+                <div><span>Day</span><strong>@game.Save.Day</strong></div>
+                <div><span>Doubloons</span><strong class="gold">@game.Save.Gold</strong></div>
+                <div><span>Regions</span><strong>@game.Conquered / 3</strong></div>
+            </div>
+        }
+    </header>
+
+    @if (campaign is not { } active)
+    {
+        <p class="loading">Unfurling the sea chart…</p>
+    }
+    else if (battle is { } fight)
+    {
+        <Broadside @key="fight" Fight="fight" OnFinished="Finish" OnWithdraw="Withdraw" />
+    }
+    else
+    {
+        <nav class="game-nav" aria-label="Game screens">
+            <button class="nav-tab @(!outfitting ? "selected" : null)" aria-pressed="@(!outfitting)" @onclick="() => outfitting = false">Sea chart</button>
+            <button class="nav-tab @(outfitting ? "selected" : null)" aria-pressed="@outfitting" @onclick="() => outfitting = true">Outfitter</button>
+        </nav>
+        @if (active.Conquered == SeaChart.Regions.Length)
+        {
+            <div class="report victory" role="status"><strong>You rule the open ocean</strong><span>All three overlords have fallen. Every region flies your flag.</span></div>
+        }
+        @if (outfitting)
+        {
+            <Outfitter Game="active" Changed="SaveProgress" />
+        }
+        else
+        {
+            <ChartView Game="active" Sail="Sail" NextDay="NextDay" Engage="Engage" />
+        }
+        <footer class="game-footer">
+            <span>@(storageFailed ? "Browser storage unavailable. Progress lasts until you close this page." : "Progress is saved in this browser.")</span>
+            @if (confirmNew)
+            {
+                <div class="reset-controls"><span>Erase this campaign?</span><button class="button danger" @onclick="NewCampaign">Start over</button><button class="button" @onclick="() => confirmNew = false">Cancel</button></div>
+            }
+            else
+            {
+                <button class="text-button" @onclick="() => confirmNew = true">New campaign</button>
+            }
+        </footer>
+    }
+</main>
+
+@code {
+    private Campaign? campaign;
+    private Battle? battle;
+    private IJSObjectReference? browser;
+    private bool outfitting;
+    private bool storageFailed;
+    private bool confirmNew;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        browser = await JS.InvokeAsync<IJSObjectReference>("import", "./game.js");
+        CampaignSave? save = null;
+        try
+        {
+            var raw = await browser.InvokeAsync<string?>("load");
+            if (raw is not null) save = JsonSerializer.Deserialize(raw, SaveJson.Default.CampaignSave);
+        }
+        catch (JsonException) { }
+        catch (JSException) { storageFailed = true; }
+        campaign = new(save);
+        await SaveProgress();
+        StateHasChanged();
+    }
+
+    private async Task Sail(int id)
+    {
+        if (campaign!.Sail(id)) await SaveProgress();
+    }
+
+    private async Task NextDay()
+    {
+        campaign!.NextDay();
+        await SaveProgress();
+    }
+
+    private void Engage()
+    {
+        if (campaign!.HasCannon && campaign.IsThreat(campaign.Here)) battle = new(campaign);
+    }
+
+    private async Task Finish(Battle result)
+    {
+        if (battle != result) return;
+        campaign!.Resolve(result);
+        battle = null;
+        await SaveProgress();
+    }
+
+    private async Task Withdraw()
+    {
+        battle!.Withdraw();
+        await Finish(battle);
+    }
+
+    private async Task NewCampaign()
+    {
+        campaign = new();
+        confirmNew = false;
+        outfitting = false;
+        await SaveProgress();
+    }
+
+    private async Task SaveProgress()
+    {
+        if (browser is null || storageFailed) return;
+        try
+        {
+            var json = JsonSerializer.Serialize(campaign!.Save, SaveJson.Default.CampaignSave);
+            await browser.InvokeVoidAsync("save", json);
+        }
+        catch (JSException) { storageFailed = true; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (browser is not null) await browser.DisposeAsync();
+    }
+}

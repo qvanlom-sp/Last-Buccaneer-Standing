@@ -1,0 +1,182 @@
+@using System.Diagnostics
+@using System.Globalization
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<section class="panel battle-panel" aria-labelledby="battle-heading">
+    <div class="panel-heading">
+        <div><p class="eyebrow">@(Fight.IsMerchant ? "Merchant raid" : Fight.IsFort ? "Island siege" : "Pirate broadside")</p><h2 id="battle-heading">@Fight.Encounter.Name</h2></div>
+        <div class="moves"><strong>@Math.Max(0, (int)Math.Ceiling(Fight.Duration - Fight.Time))s</strong><span>@(Fight.IsMerchant ? $"{Fight.Loot} looted" : "remaining")</span></div>
+    </div>
+    <div class="battle-status">
+        <div><strong>Your hull · @Math.Ceiling(Fight.Hull) / @Fight.MaxHull</strong><progress value="@Fight.Hull" max="@Fight.MaxHull" aria-label="Your hull"></progress></div>
+        <span role="status">@Fight.Notice</span>
+        <div><strong>@(Fight.IsFort ? "Fort" : "Enemy hull") · @Math.Ceiling(Fight.EnemyHull) / @Fight.Encounter.Hull</strong><progress value="@Fight.EnemyHull" max="@Fight.Encounter.Hull" aria-label="Enemy hull"></progress></div>
+    </div>
+    <div class="arena">
+        <svg @ref="arena" viewBox="0 0 900 420" class="battlefield" aria-label="Cannon battle. Click to steer to a height.">
+            <defs>
+                <pattern id="battle-water" width="90" height="40" patternUnits="userSpaceOnUse">
+                    <path d="M 6 23q10 -8 20 0t20 0M58 7q5 -5 12 0" fill="none" stroke="#64b6ba" stroke-opacity=".17"/>
+                    <path d="M0 40h90" stroke="#64b6ba" stroke-opacity=".12" />
+                </pattern>
+            </defs>
+            <rect width="900" height="420" fill="url(#battle-water)" />
+            <path d="M140 0v420m620 -420v420" stroke="#52969c" stroke-opacity=".45" stroke-dasharray="6 8" />
+            @if (Math.Abs(Fight.TargetY - Fight.PlayerY) > 6)
+            {
+                <path d="@FormattableString.Invariant($"M 24 {Fight.TargetY} h 109")" stroke="#f0b859" stroke-opacity=".65" stroke-dasharray="4 7" />
+            }
+            @foreach (var gate in Battle.Gates)
+            {
+                <g class="gate @gate.Kind.ToString().ToLowerInvariant()" transform="@Translate(gate.X, gate.Y(Fight.Time))">
+                    <rect x="-17" y="-27" width="34" height="54" rx="8" />
+                    <path d="M-17 -27h34m-34 54h34" />
+                    <text y="4" text-anchor="middle">@GateLabel(gate.Kind)</text>
+                </g>
+            }
+            <g transform="@Translate(82, Fight.PlayerY)" class="player-ship">
+                <path class="ship-wake" d="M-48 74q47 24 96 0M-56 83q56 26 112 0" />
+                <path class="ship-hull" d="M0 -86Q37 -60 39 -32V58L22 82H-22L-39 58V-32Q-37 -60 0 -86Z" />
+                <path class="ship-sail" d="M-22 -36Q0 -52 22 -36L19 -7Q0 -19 -19 -7ZM-17 12Q0 0 17 12L14 38Q0 31 -14 38Z" />
+            </g>
+            @if (Fight.IsFort)
+            {
+                <g transform="@Translate(821, Fight.EnemyY)" class="enemy-fort">
+                    <path class="island" d="M-66 -85Q-30 -116 33 -104L77 -76V80Q29 119 -37 95L-66 57Z" />
+                    <path class="fort-wall" d="M-42 -77H43V77H-42Z" />
+                    <path class="battlements" d="M-42 -77v154m29 -154v154m28 -154v154m28 -154v154" />
+                </g>
+            }
+            else
+            {
+                <g transform="@Translate(819, Fight.EnemyY)" class="@(Fight.IsMerchant ? "merchant-ship" : "enemy-ship")">
+                    <path class="ship-wake" d="M-48 74q47 24 96 0M-56 83q56 26 112 0" />
+                    <path class="ship-hull" d="M0 -86Q37 -60 39 -32V58L22 82H-22L-39 58V-32Q-37 -60 0 -86Z" />
+                    <path class="ship-sail" d="M-22 -36Q0 -52 22 -36L19 -7Q0 -19 -19 -7ZM-17 12Q0 0 17 12L14 38Q0 31 -14 38Z" />
+                </g>
+            }
+            @foreach (var gun in Fight.PlayerGuns)
+            {
+                <CannonGlyph @key="gun" Gun="gun" X="130" Y="@Battle.GunY(Fight.PlayerY, gun.Slot)" Player="true" />
+            }
+            @foreach (var gun in Fight.EnemyGuns)
+            {
+                <CannonGlyph @key="gun" Gun="gun" X="767" Y="@Battle.GunY(Fight.EnemyY, gun.Slot)" />
+            }
+            @foreach (var chest in Fight.Chests)
+            {
+                <g transform="@Translate(808, Battle.ChestY(Fight.EnemyY, chest.Slot))" class="chest @(chest.Health <= 0 ? "destroyed" : null)">
+                    <rect x="-12" y="-9" width="24" height="18" rx="3" /><path d="M-12 -1h24M0 -3v7" />
+                </g>
+            }
+            @foreach (var shot in Fight.Shots)
+            {
+                <circle @key="shot.Id" class="shot @(shot.Speed < 0 ? "incoming" : "outgoing") @(shot.Burning ? "burning" : null)"
+                        cx="@Number(shot.X)" cy="@Number(shot.Y)" r="@(shot.Kind == CannonKind.Heavy ? 7 : shot.Kind == CannonKind.Scatter ? 3 : 5)" />
+            }
+        </svg>
+        @if (paused)
+        {
+            <div class="pause-overlay"><button class="button primary" @onclick="TogglePause">Resume battle</button></div>
+        }
+    </div>
+    <div class="battle-controls">
+        <div class="steering">
+            <button class="button" @onclick="() => Nudge(-40)" disabled="@paused">Up</button>
+            <label>Steering <input type="range" min="@Battle.MinY" max="@Battle.MaxY" value="@Number(Fight.TargetY)" @oninput="SteerRange" disabled="@paused" /></label>
+            <button class="button" @onclick="() => Nudge(40)" disabled="@paused">Down</button>
+        </div>
+        <div class="battle-actions">
+            <button class="button" @onclick="TogglePause">@(paused ? "Resume" : "Pause")</button>
+            <button class="button danger" @onclick="OnWithdraw">Retreat</button>
+        </div>
+    </div>
+    <div class="chart-key">
+        <span>Tap the water or steer with W/S and ↑/↓. Cannons fire automatically.</span>
+        <span><b class="teal">×2</b> Damage</span><span><b class="violet">+1</b> Extra shot</span>
+        <span><b class="gold">F</b> Ignite</span><span><b class="coral">×</b> Block</span>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Battle Fight { get; set; } = default!;
+    [Parameter] public EventCallback<Battle> OnFinished { get; set; }
+    [Parameter] public EventCallback OnWithdraw { get; set; }
+
+    private readonly CancellationTokenSource stopped = new();
+    private ElementReference arena;
+    private IJSObjectReference? module;
+    private IJSObjectReference? controls;
+    private DotNetObjectReference<Broadside>? callback;
+    private bool paused;
+    private int direction;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./game.js");
+        callback = DotNetObjectReference.Create(this);
+        controls = await module.InvokeAsync<IJSObjectReference>("steering", arena, callback);
+        _ = Run();
+    }
+
+    private async Task Run()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(33));
+        var last = Stopwatch.GetTimestamp();
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stopped.Token))
+            {
+                var delta = Math.Min(.05f, (float)Stopwatch.GetElapsedTime(last).TotalSeconds);
+                last = Stopwatch.GetTimestamp();
+                if (paused) continue;
+                Fight.Step(delta, direction);
+                if (Fight.Result != BattleResult.InProgress)
+                {
+                    await OnFinished.InvokeAsync(Fight);
+                    return;
+                }
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException) when (stopped.IsCancellationRequested) { }
+    }
+
+    [JSInvokable] public void SetDirection(int value) => direction = value;
+    [JSInvokable] public void Steer(float y)
+    {
+        if (!paused) Fight.TargetY = Math.Clamp(y, Battle.MinY, Battle.MaxY);
+    }
+
+    private void TogglePause() => paused = !paused;
+    private void Nudge(int amount) => Steer(Fight.TargetY + amount);
+    private void SteerRange(ChangeEventArgs args)
+    {
+        if (float.TryParse(args.Value?.ToString(), CultureInfo.InvariantCulture, out var y)) Steer(y);
+    }
+
+    private static string Number(float value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+    private static string Translate(float x, float y) => $"translate({Number(x)} {Number(y)})";
+    private static string GateLabel(GateKind kind) => kind switch
+    {
+        GateKind.Double => "×2",
+        GateKind.Split => "+1",
+        GateKind.Fire => "F",
+        _ => "×"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        await stopped.CancelAsync();
+        stopped.Dispose();
+        if (controls is not null)
+        {
+            await controls.InvokeVoidAsync("dispose");
+            await controls.DisposeAsync();
+        }
+        callback?.Dispose();
+        if (module is not null) await module.DisposeAsync();
+    }
+}
