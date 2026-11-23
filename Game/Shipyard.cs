@@ -12,6 +12,9 @@ public sealed record ShipSpec(ShipKind Kind, string Name, string Class, int Colu
 
     public float Lane(DeckPosition cell) =>
         (cell.Row - (Rows - 1) * .5f) * 28 + (cell.Deck - (Decks - 1) * .5f) * 9;
+
+    public string SideName(int column) =>
+        column == 0 ? "Port" : column == Columns - 1 ? "Starboard" : "Center";
 }
 
 public readonly record struct DeckPosition(int Column, int Row, int Deck);

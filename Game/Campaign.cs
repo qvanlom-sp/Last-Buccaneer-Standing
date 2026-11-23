@@ -127,6 +127,18 @@ public sealed class Campaign
         return true;
     }
 
+    public bool MoveMount(DeckPosition source, DeckPosition destination)
+    {
+        if (source == destination || !Ship.Contains(source) || !Ship.Contains(destination)) return false;
+        var mounts = Loadout.Mounts;
+        var sourceIndex = mounts.FindIndex(mount => mount.Position == source);
+        if (sourceIndex < 0) return false;
+        var targetIndex = mounts.FindIndex(mount => mount.Position == destination);
+        mounts[sourceIndex] = mounts[sourceIndex] with { Position = destination };
+        if (targetIndex >= 0) mounts[targetIndex] = mounts[targetIndex] with { Position = source };
+        return true;
+    }
+
     public bool Assign(DeckPosition position, int? pirate)
     {
         if (MountAt(position) is not { Cannon: not null } mount ||
@@ -139,6 +151,17 @@ public sealed class Campaign
         }
         return true;
     }
+
+    public void UnassignAll()
+    {
+        for (var index = 0; index < Loadout.Mounts.Count; index++)
+        {
+            var mount = Loadout.Mounts[index];
+            if (mount.GunnerId.HasValue) Loadout.Mounts[index] = mount with { GunnerId = null };
+        }
+    }
+
+    public void ClearLayout() => Loadout.Mounts.Clear();
 
     public bool Hire(int pirate)
     {

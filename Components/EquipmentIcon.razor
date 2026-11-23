@@ -1,0 +1,36 @@
+<svg class="equipment-icon @(Cannon?.ToString().ToLowerInvariant())" width="@Size" height="@Size"
+     viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+    @if (Barricade)
+    {
+        <path class="icon-wall" d="M6 8h20v16H6zM6 12h20M6 20h20M10 8v16M22 8v16" />
+    }
+    else if (Cannon is { } kind)
+    {
+        <path class="icon-base" d="M7 21h15l3 4H5z" />
+        @switch (kind)
+        {
+            case CannonKind.Heavy:
+                <path class="icon-gun" d="M6 15l12-6 4 7-13 6z" /><circle cx="25" cy="8" r="4" />
+                break;
+            case CannonKind.Scatter:
+                <path class="icon-gun" d="M6 17l13-6 4 6-15 6z" /><circle cx="25" cy="7" r="1.5" /><circle cx="27" cy="12" r="1.5" /><circle cx="21" cy="7" r="1.5" />
+                break;
+            case CannonKind.Fire:
+                <path class="icon-gun" d="M6 17l13-6 4 6-15 6z" /><path class="icon-flame" d="M24 16c4 0 6-4 3-7-.1 2-1 2-2 2 1-3-1-6-3-7 1 3-2 5-2 8 0 2 2 4 4 4z" />
+                break;
+            default:
+                <path class="icon-gun" d="M6 17l16-7 3 5-17 8z" /><circle cx="26" cy="7" r="2" />
+                break;
+        }
+    }
+    else
+    {
+        <path class="icon-remove" d="M9 9l14 14m0-14L9 23" />
+    }
+</svg>
+
+@code {
+    [Parameter] public CannonKind? Cannon { get; set; }
+    [Parameter] public bool Barricade { get; set; }
+    [Parameter] public int Size { get; set; } = 32;
+}

@@ -1,5 +1,45 @@
-<div class="dashboard outfit">
-    <section class="panel chart-panel" aria-labelledby="outfitter-heading">
+<div class="outfit">
+    <aside class="panel side-panel equipment-palette" aria-labelledby="equipment-heading">
+        <h2 id="equipment-heading">Equipment</h2>
+        <div class="equipment-tools">
+            @foreach (var kind in Enum.GetValues<CannonKind>())
+            {
+                var spec = Campaign.Cannons[(int)kind];
+                var available = Game.Available(kind);
+                <div class="equipment-row">
+                    <button class="equipment-tool" aria-pressed="@(tool == Tool.Cannon && cannon == kind)"
+                            aria-label="Place @spec.Name" disabled="@(available <= 0)" @onclick="() => SelectCannon(kind)">
+                        <EquipmentIcon Cannon="kind" />
+                        <span><strong>@spec.Name</strong><small>@available in reserve</small></span>
+                    </button>
+                    @if (Game.AtBasecamp)
+                    {
+                        <button class="button equipment-buy" disabled="@(Game.Save.Gold < spec.Cost)"
+                                @onclick="() => Change(Game.Buy(kind))" aria-label="Buy @spec.Name for @spec.Cost doubloons">@spec.Cost</button>
+                    }
+                </div>
+            }
+            <div class="equipment-row">
+                <button class="equipment-tool" aria-pressed="@(tool == Tool.Barricade)" aria-label="Place barricade"
+                        disabled="@(Game.AvailableBarricades <= 0)" @onclick="() => SelectTool(Tool.Barricade)">
+                    <EquipmentIcon Barricade="true" />
+                    <span><strong>Barricade</strong><small>@Game.AvailableBarricades in reserve</small></span>
+                </button>
+                @if (Game.AtBasecamp)
+                {
+                    <button class="button equipment-buy" disabled="@(Game.Save.Gold < Shipyard.BarricadeCost)"
+                            @onclick="() => Change(Game.BuyBarricade())" aria-label="Buy barricade for @Shipyard.BarricadeCost doubloons">@Shipyard.BarricadeCost</button>
+                }
+            </div>
+            <button class="equipment-tool" aria-pressed="@(tool == Tool.Remove)" disabled="@(Game.Loadout.Mounts.Count == 0)"
+                    @onclick="() => SelectTool(Tool.Remove)">
+                <EquipmentIcon />
+                <strong>Remove equipment</strong>
+            </button>
+        </div>
+    </aside>
+
+    <section class="panel chart-panel layout-panel" aria-labelledby="outfitter-heading">
         <div class="panel-heading">
             <div><p class="eyebrow">@Game.Ship.Class</p><h2 id="outfitter-heading">@Game.Ship.Name</h2></div>
             <div class="moves"><strong>@Game.MannedCannons</strong><span>manned guns</span></div>
@@ -13,184 +53,214 @@
                 @for (var index = 0; index < Game.Ship.Decks; index++)
                 {
                     var deck = index;
-                    <button class="button deck-tab" aria-pressed="@(selected.Deck == deck)" @onclick="() => SelectDeck(deck)">Deck @(deck + 1)</button>
+                    <button class="button deck-tab" data-deck-tab="@deck" aria-pressed="@(selected.Deck == deck)" @onclick="() => SelectDeck(deck)">Deck @(deck + 1)</button>
                 }
             </div>
-            <ShipGrid Game="Game" Selected="selected" OnSelect="SelectCell" />
-            <p class="deck-help">Select a cell to fit equipment. Place barricades outboard of your cannons to catch enemy fire.</p>
+            <div class="layout-instructions">
+                <p role="status">@Instruction</p>
+                @if (tool != Tool.Inspect)
+                {
+                    <button class="text-button" @onclick="CancelTool">Cancel selection</button>
+                }
+            </div>
+            <ShipGrid Game="Game" Selected="selected" PickingGunner="@(tool == Tool.Gunner)" OnSelect="EditCell"
+                      OnMove="MoveMount" OnPreviewDeck="SelectDeck" />
         </div>
         <div class="mount-editor">
-            <h3>Deck @(selected.Deck + 1) · Row @(selected.Row + 1) · @(selected.Column == Game.Ship.Columns - 1 ? "Outboard" : $"Column {selected.Column + 1}")</h3>
-            <div class="mount-fields">
-                <label class="slot">
-                    <span>Equipment</span>
-                    <select value="@Equipment" @onchange="Fit">
-                        <option value="">Empty</option>
-                        <option value="wall" selected="@(Equipment == "wall")" disabled="@(Equipment != "wall" && Game.AvailableBarricades == 0)">Barricade</option>
-                        @foreach (var kind in Enum.GetValues<CannonKind>())
-                        {
-                            var installed = Mount?.Cannon == kind;
-                            <option value="@kind" selected="@installed" disabled="@(!installed && Game.Available(kind) == 0)">
-                                @Campaign.Cannons[(int)kind].Name
-                            </option>
-                        }
-                    </select>
-                </label>
-                @if (Mount?.Cannon is not null)
+            <div class="station-summary">
+                <h3>@Station(selected)</h3>
+                <p>@MountDescription</p>
+            </div>
+            <div class="station-actions">
+                @if (Mount is not null)
                 {
-                    <label class="slot">
-                        <span>Gunner</span>
-                        <select value="@Mount.GunnerId" @onchange="Assign">
-                            <option value="">Unmanned</option>
-                            @foreach (var id in Game.Loadout.Crew)
-                            {
-                                var pirate = Shipyard.GetPirate(id);
-                                <option value="@id" selected="@(Mount?.GunnerId == id)">@pirate.Name (@pirate.Overall.ToString("0.#"))</option>
-                            }
-                        </select>
-                    </label>
+                    <button class="button" aria-pressed="@(tool == Tool.Move && moveSource == selected)" @onclick="BeginMove">Move equipment</button>
+                }
+                @if (Mount?.GunnerId is not null)
+                {
+                    <button class="button" @onclick="() => Change(Game.Assign(selected, null))">Unassign gunner</button>
                 }
             </div>
-            @if (Mount?.Cannon is not null && Mount.GunnerId is null)
+        </div>
+        <div class="layout-actions">
+            @if (confirmClear)
             {
-                <p class="mount-note">Assign a gunner to fire this cannon.</p>
+                <span>Return all mounted equipment to reserve?</span>
+                <button class="button danger" @onclick="ClearLayout">Confirm clear</button>
+                <button class="button" @onclick="() => confirmClear = false">Cancel</button>
             }
-            else if (Mount?.GunnerId is { } gunner)
+            else
             {
-                <PirateCardView Card="Shipyard.GetPirate(gunner)" />
+                <button class="button danger" disabled="@(Game.Loadout.Mounts.Count == 0)" @onclick="() => confirmClear = true">Clear layout</button>
             }
         </div>
     </section>
 
-    <aside class="panel side-panel outfitter-market">
-        <p class="eyebrow">Quartermaster</p>
-        <h2>@(Game.AtBasecamp ? Game.Here.Encounter.Name : "At sea")</h2>
-        @if (!Game.AtBasecamp)
-        {
-            <p>Return to any basecamp to shop, hire, upgrade, or change ships. You can refit owned equipment and reassign crew at sea.</p>
-        }
-        <nav class="game-nav" aria-label="Quartermaster">
-            @foreach (var section in Enum.GetValues<MarketSection>())
+    <aside class="panel side-panel crew-panel" aria-labelledby="crew-heading">
+        <div class="crew-heading">
+            <h2 id="crew-heading">Crew</h2>
+            <button class="button" disabled="@(Game.MannedCannons == 0)" @onclick="UnassignAll">Unassign all</button>
+        </div>
+        <p class="crew-count">@Game.MannedCannons assigned · @(Game.Loadout.Crew.Count - Game.MannedCannons) unassigned</p>
+        <div class="crew-roster">
+            @foreach (var id in Game.Loadout.Crew)
             {
-                <button class="nav-tab @(market == section ? "selected" : null)" aria-pressed="@(market == section)"
-                        @onclick="() => market = section">@section</button>
+                var pirate = Shipyard.GetPirate(id);
+                var station = Game.Loadout.Mounts.Find(item => item.GunnerId == id);
+                var isSelected = tool == Tool.Gunner && gunner == id;
+                var status = station is null ? "Unassigned" : $"Assigned · {Station(station.Position)}";
+                <PirateCardView @key="id" Card="pirate" Status="@status" Selected="isSelected"
+                                SelectionLabel="@($"{(station is null ? "Assign" : "Reassign")} {pirate.Name}")"
+                                OnSelect="() => SelectGunner(id)" />
             }
-        </nav>
-        @switch (market)
-        {
-            case MarketSection.Supplies:
-                @foreach (var kind in Enum.GetValues<CannonKind>())
-                {
-                    var spec = Campaign.Cannons[(int)kind];
-                    <div class="shop-row">
-                        <div><strong>@spec.Name</strong><small>@spec.Description · @Game.Available(kind) in reserve</small></div>
-                        <button class="button" disabled="@(!Game.AtBasecamp || Game.Save.Gold < spec.Cost)"
-                                @onclick="() => Change(Game.Buy(kind))" aria-label="Buy @spec.Name for @spec.Cost doubloons">@spec.Cost</button>
-                    </div>
-                }
-                <div class="shop-row">
-                    <div><strong>Barricade</strong><small>@Shipyard.BarricadeHealth HP · @Game.AvailableBarricades in reserve</small></div>
-                    <button class="button" disabled="@(!Game.AtBasecamp || Game.Save.Gold < Shipyard.BarricadeCost)"
-                            @onclick="() => Change(Game.BuyBarricade())" aria-label="Buy barricade for @Shipyard.BarricadeCost doubloons">@Shipyard.BarricadeCost</button>
-                </div>
-                break;
-            case MarketSection.Crew:
-                <h3>Your crew</h3>
-                @foreach (var id in Game.Loadout.Crew)
-                {
-                    var station = Game.Loadout.Mounts.Find(item => item.GunnerId == id);
-                    <PirateCardView @key="id" Card="Shipyard.GetPirate(id)"
-                                    Status="@(station is null ? "Available" : $"Deck {station.Position.Deck + 1}, row {station.Position.Row + 1}, column {station.Position.Column + 1}")" />
-                }
-                @if (Game.Market is not null)
-                {
-                    <h3 class="market-heading">Local recruits</h3>
-                    var recruits = Game.Market.Recruits.Where(card => !Game.Loadout.Crew.Contains(card.Id)).ToArray();
-                    @if (recruits.Length == 0)
-                    {
-                        <p>Everyone here has joined your crew.</p>
-                    }
-                    @foreach (var recruit in recruits)
-                    {
-                        <PirateCardView @key="recruit.Id" Card="recruit">
-                            <button class="button" disabled="@(Game.Save.Gold < recruit.Cost)"
-                                    @onclick="() => Change(Game.Hire(recruit.Id))"
-                                    aria-label="Hire @recruit.Name for @recruit.Cost doubloons">Hire · @recruit.Cost</button>
-                        </PirateCardView>
-                    }
-                }
-                break;
-            case MarketSection.Ships:
-                <h3>Your fleet</h3>
-                @foreach (var kind in Game.Loadout.Fleet)
-                {
-                    var ship = Shipyard.GetShip(kind);
-                    <div class="shop-row" @key="kind">
-                        <div><strong>@ship.Name</strong><small>@ShipDetails(ship)</small></div>
-                        <button class="button" disabled="@(!Game.AtBasecamp || Game.Ship.Kind == kind)"
-                                @onclick="() => UseShip(kind, false)">@(Game.Ship.Kind == kind ? "Active" : "Switch")</button>
-                    </div>
-                }
-                @if (Game.Market is { } shipMarket && !Game.Loadout.Fleet.Contains(shipMarket.Ship))
-                {
-                    var ship = Shipyard.GetShip(shipMarket.Ship);
-                    <h3 class="market-heading">Local shipwright</h3>
-                    <div class="shop-row">
-                        <div><strong>@ship.Name</strong><small>@ShipDetails(ship)</small></div>
-                        <button class="button" disabled="@(Game.Save.Gold < ship.Cost)"
-                                @onclick="() => UseShip(ship.Kind, true)" aria-label="Buy @ship.Name for @ship.Cost doubloons">@ship.Cost</button>
-                    </div>
-                }
-                <p class="mount-note">Equipment that fits moves to the new ship. Gear outside its grid goes into reserve.</p>
-                <h3 class="market-heading">Fleet upgrades</h3>
-                @foreach (var kind in Enum.GetValues<UpgradeKind>())
-                {
-                    var spec = Campaign.Improvements[(int)kind];
-                    var level = Game.Level(kind);
-                    var cost = Game.UpgradeCost(kind);
-                    <div class="shop-row">
-                        <div><strong>@spec.Name <span class="level">@level/@Campaign.MaxUpgrade</span></strong><small>@spec.Description</small></div>
-                        <button class="button" disabled="@(!Game.AtBasecamp || Game.Save.Gold < cost || level >= Campaign.MaxUpgrade)"
-                                @onclick="() => Change(Game.Upgrade(kind))"
-                                aria-label="Upgrade @spec.Name for @cost doubloons">@(level >= Campaign.MaxUpgrade ? "Max" : cost.ToString())</button>
-                    </div>
-                }
-                break;
-        }
+        </div>
     </aside>
+
+    <Quartermaster Game="Game" Changed="Changed" ShipChanged="OnShipChanged" />
 </div>
 
 @code {
     [Parameter, EditorRequired] public Campaign Game { get; set; } = default!;
     [Parameter] public EventCallback Changed { get; set; }
 
-    private enum MarketSection { Supplies, Crew, Ships }
-    private MarketSection market;
+    private enum Tool { Inspect, Cannon, Barricade, Remove, Gunner, Move }
+    private Tool tool;
+    private CannonKind cannon;
+    private int gunner;
     private DeckPosition selected = new(1, 0, 0);
+    private DeckPosition moveSource;
+    private bool confirmClear;
+    private string? feedback;
     private DeckMount? Mount => Game.MountAt(selected);
-    private string Equipment => Mount is { Barricade: true } ? "wall" : Mount?.Cannon?.ToString() ?? "";
-
-    private void SelectCell(DeckPosition cell) => selected = cell;
-    private void SelectDeck(int deck) => selected = selected with { Deck = deck };
-
-    private Task Fit(ChangeEventArgs args)
+    private string Instruction => feedback ?? (tool switch
     {
-        var value = args.Value?.ToString();
-        var cannon = Enum.TryParse<CannonKind>(value, out var kind) ? (CannonKind?)kind : null;
-        return Change(Game.Fit(selected, cannon, value == "wall"));
+        Tool.Cannon => $"Choose a cell for {Campaign.Cannons[(int)cannon].Name}.",
+        Tool.Barricade => "Choose a cell for the barricade.",
+        Tool.Remove => "Choose equipment to return to reserve.",
+        Tool.Gunner => $"Choose a cannon for {Shipyard.GetPirate(gunner).Name}.",
+        Tool.Move => "Choose a destination. Occupied cells swap equipment.",
+        _ => "Drag mounted equipment to move it, or select a tool."
+    });
+
+    private string MountDescription => Mount switch
+    {
+        { Cannon: { } kind, GunnerId: { } id } => $"{Campaign.Cannons[(int)kind].Name} · {Shipyard.GetPirate(id).Name}",
+        { Cannon: { } kind } => $"{Campaign.Cannons[(int)kind].Name} · Unmanned",
+        { Barricade: true } => "Barricade",
+        _ => "Empty"
+    };
+
+    private void SelectTool(Tool next)
+    {
+        tool = tool == next ? Tool.Inspect : next;
+        feedback = null;
+        confirmClear = false;
     }
 
-    private Task Assign(ChangeEventArgs args) =>
-        Change(Game.Assign(selected, int.TryParse(args.Value?.ToString(), out var id) ? id : null));
-
-    private Task UseShip(ShipKind kind, bool buy)
+    private void SelectCannon(CannonKind kind)
     {
-        if (!(buy ? Game.Commission(kind) : Game.SwitchShip(kind))) return Task.CompletedTask;
+        if (cannon != kind && tool == Tool.Cannon) tool = Tool.Inspect;
+        cannon = kind;
+        SelectTool(Tool.Cannon);
+    }
+
+    private void SelectGunner(int id)
+    {
+        if (gunner != id && tool == Tool.Gunner) tool = Tool.Inspect;
+        gunner = id;
+        SelectTool(Tool.Gunner);
+    }
+
+    private void BeginMove()
+    {
+        if (moveSource != selected && tool == Tool.Move) tool = Tool.Inspect;
+        moveSource = selected;
+        SelectTool(Tool.Move);
+    }
+
+    private void CancelTool()
+    {
+        tool = Tool.Inspect;
+        feedback = null;
+    }
+
+    private void SelectDeck(int deck)
+    {
+        selected = selected with { Deck = deck };
+        feedback = null;
+    }
+
+    private async Task EditCell(DeckPosition cell)
+    {
+        if (tool == Tool.Move)
+        {
+            await MoveMount((moveSource, cell));
+            return;
+        }
+        selected = cell;
+        feedback = null;
+        confirmClear = false;
+        var mount = Mount;
+        switch (tool)
+        {
+            case Tool.Cannon when mount?.Cannon != cannon && Game.Fit(cell, cannon):
+                if (Game.Available(cannon) == 0) CancelTool();
+                break;
+            case Tool.Barricade when mount?.Barricade != true && Game.Fit(cell, null, barricade: true):
+                if (Game.AvailableBarricades == 0) CancelTool();
+                break;
+            case Tool.Remove when mount is not null && Game.Fit(cell, null):
+                if (Game.Loadout.Mounts.Count == 0) CancelTool();
+                break;
+            case Tool.Gunner:
+                if (!Game.Assign(cell, gunner))
+                {
+                    feedback = $"Choose a cannon for {Shipyard.GetPirate(gunner).Name}. This cell has no cannon.";
+                    return;
+                }
+                CancelTool();
+                break;
+            default:
+                return;
+        }
+        await Changed.InvokeAsync();
+    }
+
+    private Task MoveMount((DeckPosition Source, DeckPosition Destination) move)
+    {
+        if (!Game.MoveMount(move.Source, move.Destination)) return Task.CompletedTask;
+        selected = move.Destination;
+        confirmClear = false;
+        CancelTool();
+        feedback = $"Equipment moved to {Station(selected)}.";
+        return Changed.InvokeAsync();
+    }
+
+    private Task UnassignAll()
+    {
+        Game.UnassignAll();
+        CancelTool();
+        feedback = "All crew are unassigned.";
+        return Changed.InvokeAsync();
+    }
+
+    private Task ClearLayout()
+    {
+        Game.ClearLayout();
+        confirmClear = false;
+        CancelTool();
+        feedback = "Layout cleared. Equipment is back in reserve.";
+        return Changed.InvokeAsync();
+    }
+
+    private Task OnShipChanged()
+    {
         if (!Game.Ship.Contains(selected)) selected = new(Game.Ship.Columns - 1, 0, 0);
+        confirmClear = false;
+        CancelTool();
         return Changed.InvokeAsync();
     }
 
     private Task Change(bool changed) => changed ? Changed.InvokeAsync() : Task.CompletedTask;
-    private static string ShipDetails(ShipSpec ship) =>
-        $"{ship.Class} · {ship.Columns}×{ship.Rows}×{ship.Decks} grid · {ship.Hull} base HP · {ship.Speed} base speed";
+    private string Station(DeckPosition cell) => $"Deck {cell.Deck + 1} · Row {cell.Row + 1} · {Game.Ship.SideName(cell.Column)}";
 }

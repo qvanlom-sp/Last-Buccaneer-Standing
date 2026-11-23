@@ -1,5 +1,10 @@
-<svg class="ship-grid" viewBox="@(Game.Ship.Decks == 1 ? "0 73 540 220" : "0 0 540 356")" aria-label="Isometric ship grid">
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<svg @ref="grid" class="ship-grid" viewBox="@(Game.Ship.Decks == 1 ? "0 73 540 220" : "0 0 540 356")" aria-label="Isometric ship grid">
     <path class="ship-grid-water" d="M25 262h75m10 21h44m225 -23h72m-19 20h88m-95 -191h66M36 89h63" />
+    <path class="side-leader starboard" d="@SideLeader(Game.Ship.Columns - 1, 73)" />
+    <path class="side-leader" d="@SideLeader(0, 467)" />
     @foreach (var deck in DeckOrder())
     {
         var active = deck == Selected.Deck;
@@ -12,42 +17,74 @@
                     var mount = Game.MountAt(cell);
                     var fitted = mount?.Cannon is { } cannon ? Campaign.Cannons[(int)cannon].Name :
                         mount?.Barricade == true ? "Barricade" : "Empty";
-                    var label = $"Deck {deck + 1}, row {row + 1}, column {column + 1}: {fitted}";
-                    <g @key="cell" class="deck-cell @(cell == Selected ? "chosen" : null)" transform="@Project(cell)"
+                    var label = $"Deck {deck + 1}, row {row + 1}, {Game.Ship.SideName(column)}: {fitted}";
+                    var eligible = PickingGunner && mount?.Cannon is not null;
+                    <g @key="cell" class="deck-cell @(cell == Selected ? "chosen" : null) @(eligible ? "gunner-target" : null)" transform="@Project(cell)"
+                       data-cell="@($"{cell.Column},{cell.Row},{cell.Deck}")" data-mounted="@(mount is not null ? "true" : null)"
                        role="@(active ? "button" : null)" tabindex="@(active ? 0 : null)"
                        aria-label="@(active ? label : null)" aria-pressed="@(active ? cell == Selected : null)"
                        @onclick="() => Choose(cell, active)" @onkeydown="args => KeySelect(args, cell, active)">
                         <title>@label</title>
                         <path class="grid-side" d="M-25 0 0 13 25 0v8L0 21-25 8Z" />
                         <path class="grid-top" d="M0 -13 25 0 0 13-25 0Z" />
-                        @if (mount?.Barricade == true)
+                        @if (mount is not null)
                         {
-                            <path class="grid-wall" d="M-9 -7 8 -2 8 7-9 2Zm17 5 4 -3v9L8 7Z" />
-                        }
-                        else if (mount?.Cannon is not null)
-                        {
-                            <path class="grid-gun" d="M-10 0-5 -5 1 -3 10 -5l3 4L4 2 1 6Z" />
-                            @if (mount.GunnerId.HasValue)
-                            {
-                                <circle class="grid-gunner" cx="-7" cy="-6" r="3" />
-                            }
+                            <g transform="translate(-13 -14)" class="grid-equipment">
+                                <EquipmentIcon Cannon="mount.Cannon" Barricade="mount.Barricade" Size="26" />
+                            </g>
+                            @if (mount.GunnerId.HasValue) { <circle class="grid-gunner" cx="-9" cy="-6" r="3" /> }
                         }
                     </g>
                 }
             }
         </g>
     }
-    <g class="grid-labels" transform="@(Game.Ship.Decks == 1 ? "translate(0 -49)" : "translate(0 16)")" aria-hidden="true">
-        <path d="M128 297H65m0 0 9 -5m-9 5 9 5M410 297h65m0 0-9 -5m9 5-9 5" />
-        <text x="65" y="322" text-anchor="start">Bow</text>
-        <text x="475" y="322" text-anchor="end">Stern</text>
+    <g class="grid-labels">
+        <text class="starboard" x="22" y="@LabelY">Starboard (attack side)</text>
+        <text x="518" y="@LabelY" text-anchor="end">Port side</text>
     </g>
+    <g @ref="preview" class="drag-preview" aria-hidden="true"></g>
 </svg>
 
 @code {
     [Parameter, EditorRequired] public Campaign Game { get; set; } = default!;
     [Parameter] public DeckPosition Selected { get; set; }
+    [Parameter] public bool PickingGunner { get; set; }
     [Parameter] public EventCallback<DeckPosition> OnSelect { get; set; }
+    [Parameter] public EventCallback<(DeckPosition Source, DeckPosition Destination)> OnMove { get; set; }
+    [Parameter] public EventCallback<int> OnPreviewDeck { get; set; }
+
+    private ElementReference grid;
+    private ElementReference preview;
+    private IJSObjectReference? module;
+    private IJSObjectReference? drag;
+    private DotNetObjectReference<ShipGrid>? callback;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./ship-grid.js");
+        callback = DotNetObjectReference.Create(this);
+        drag = await module.InvokeAsync<IJSObjectReference>("enableDrag", grid, preview, callback);
+    }
+
+    [JSInvokable]
+    public Task Drop(int[] source, int[] destination) =>
+        OnMove.InvokeAsync((new(source[0], source[1], source[2]), new(destination[0], destination[1], destination[2])));
+
+    [JSInvokable]
+    public Task PreviewDeck(int deck) => OnPreviewDeck.InvokeAsync(deck);
+
+    public async ValueTask DisposeAsync()
+    {
+        if (drag is not null)
+        {
+            await drag.InvokeVoidAsync("dispose");
+            await drag.DisposeAsync();
+        }
+        callback?.Dispose();
+        if (module is not null) await module.DisposeAsync();
+    }
 
     private IEnumerable<int> DeckOrder()
     {
@@ -58,13 +95,20 @@
         yield return Selected.Deck;
     }
 
-    private string Project(DeckPosition cell)
+    private int LabelY => Game.Ship.Decks == 1 ? 279 : 348;
+
+    private string SideLeader(int column, int labelX)
     {
-        var x = 270 + 42 * cell.Row - 42 * cell.Column - 21 * (Game.Ship.Rows - Game.Ship.Columns);
-        var y = 178 + 22 * (cell.Row + cell.Column) - 11 * (Game.Ship.Rows + Game.Ship.Columns - 2)
-            + 30 * (Game.Ship.Decks - 1) - 60 * cell.Deck;
-        return $"translate({x} {y})";
+        var cell = new DeckPosition(column, (Game.Ship.Rows - 1) / 2, Selected.Deck);
+        var x = GridX(cell) + (column == 0 ? 19 : -19);
+        var y = GridY(cell) + 5;
+        return $"M{labelX} {LabelY - 20} V{y} H{x}";
     }
+
+    private int GridX(DeckPosition cell) => 270 + 42 * cell.Row - 42 * cell.Column - 21 * (Game.Ship.Rows - Game.Ship.Columns);
+    private int GridY(DeckPosition cell) => 178 + 22 * (cell.Row + cell.Column) -
+        11 * (Game.Ship.Rows + Game.Ship.Columns - 2) + 30 * (Game.Ship.Decks - 1) - 60 * cell.Deck;
+    private string Project(DeckPosition cell) => $"translate({GridX(cell)} {GridY(cell)})";
 
     private Task Choose(DeckPosition cell, bool active) => active ? OnSelect.InvokeAsync(cell) : Task.CompletedTask;
     private Task KeySelect(KeyboardEventArgs args, DeckPosition cell, bool active) =>

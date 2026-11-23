@@ -50,7 +50,14 @@ p { color: var(--muted); }
 .nav-tab.selected { color: var(--gold); border-bottom-color: var(--gold); background: #f0bf7010; }
 .nav-tab:hover { color: var(--ink); }
 .dashboard { display: grid; grid-template-columns: minmax(0, 1fr) minmax(255px, 310px); gap: 1rem; align-items: start; }
-.outfit { grid-template-columns: minmax(0, 1fr) minmax(300px, 385px); }
+.outfit {
+    display: grid; grid-template-columns: minmax(205px, 235px) minmax(0, 1fr) minmax(248px, 285px);
+    grid-template-areas: "equipment layout crew" "market market market"; gap: 1rem; align-items: start;
+}
+.equipment-palette { grid-area: equipment; }
+.layout-panel { grid-area: layout; }
+.crew-panel { grid-area: crew; }
+.outfitter-market { grid-area: market; }
 .chart-side { display: grid; gap: 1rem; }
 .panel { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 10px 30px #03090b42; overflow: hidden; }
 .panel-heading { justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem; }
@@ -113,24 +120,67 @@ p { color: var(--muted); }
 .grid-top { fill: #705235; stroke: #d0a16d; }
 .grid-side { fill: #423226; stroke: #a6784e; }
 .deck-cell { cursor: pointer; }
+.deck-cell[data-mounted] { cursor: grab; touch-action: none; }
+.ship-grid.dragging, .ship-grid.dragging .deck-cell { cursor: grabbing; user-select: none; }
+.drag-source { opacity: .42; }
+.drag-preview { opacity: .8; }
+.drag-preview, .drag-preview * { pointer-events: none; }
 .deck-cell:is(:hover, :focus-visible, .chosen) .grid-top { fill: #956e43; stroke: #ffe2a3; stroke-width: 2; }
-.grid-gun { fill: #142c34; stroke: #d1d7d3; }
+.deck-cell.gunner-target .grid-top { stroke: var(--teal); stroke-width: 2; }
+.deck-cell.drop-target .grid-top { fill: #2d5a53; stroke: var(--teal); stroke-width: 2; }
+.deck-cell.drop-swap .grid-top { fill: #795137; stroke: var(--gold); stroke-width: 2; }
+.grid-equipment { pointer-events: none; }
 .grid-gunner { fill: var(--teal); stroke: #0b2027; }
-.grid-wall { fill: #3f514b; stroke: #b5ded0; }
-.grid-labels { fill: #a4bcbc; font-size: 15px; }
-.grid-labels path { fill: none; stroke: currentColor; opacity: .45; }
-.deck-help, .mount-note { color: var(--muted); font-size: .91rem; }
+.grid-labels { fill: #a4bcbc; font-size: 17px; font-weight: 650; }
+.grid-labels .starboard { fill: var(--gold); }
+.side-leader { fill: none; stroke: #9ab8b6; stroke-opacity: .47; stroke-dasharray: 4 5; }
+.side-leader.starboard { stroke: var(--gold); }
+.layout-instructions { display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .7rem; margin-top: .65rem; font-size: .94rem; }
+.layout-instructions .text-button { padding: 0; }
+.mount-note, .crew-count { color: var(--muted); font-size: .91rem; }
 .mount-note { margin-top: .65rem; }
-.mount-editor { padding: .9rem 1.15rem 1.15rem; }
-.mount-editor h3, .outfitter-market h3 { margin: 0 0 .55rem; font-size: 1rem; }
-.mount-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .65rem; }
-.slot span { display: block; margin-bottom: .3rem; color: var(--muted); font-size: .88rem; }
-.slot select { width: 100%; padding: .45rem .25rem; color: var(--ink); background: #142d36; border: 1px solid #45656b; border-radius: 7px; }
+.mount-editor, .layout-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; padding: .75rem 1.15rem; }
+.mount-editor { justify-content: space-between; }
+.station-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.station-actions button[aria-pressed="true"] { border-color: var(--gold); }
+.layout-actions { border-top: 1px solid var(--line); color: var(--muted); }
+.station-summary h3, .outfitter-market h3 { margin: 0 0 .25rem; font-size: 1rem; }
+.equipment-tools { display: grid; gap: .5rem; margin-top: .75rem; }
+.equipment-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .35rem; }
+.equipment-tool {
+    width: 100%; display: flex; align-items: center; gap: .45rem; text-align: left; padding: .4rem;
+    color: var(--ink); border: 1px solid var(--line); border-radius: 7px; background: #142b32;
+}
+.equipment-tool:not(:disabled):hover, .equipment-tool[aria-pressed="true"] { border-color: var(--gold); background: #263734; }
+.equipment-tool small { display: block; color: var(--muted); }
+.equipment-buy { color: var(--gold); min-width: 2.65rem; padding-inline: .35rem; }
+.equipment-icon { flex: 0 0 auto; color: #d7e3dc; fill: currentColor; }
+.equipment-icon .icon-base { fill: #b69d73; }
+.equipment-icon.heavy { color: #f0bf70; }
+.equipment-icon.scatter { color: #c3aaf1; }
+.equipment-icon.fire { color: #ffa294; }
+.icon-flame { fill: var(--coral); }
+.icon-wall { fill: #456661; stroke: var(--teal); stroke-width: 2; }
+.icon-remove { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+.outfitter-market summary { cursor: pointer; font-weight: 650; }
+.outfitter-market summary + p { margin-top: .65rem; }
 .outfitter-market .game-nav { margin: .8rem 0 .6rem; flex-wrap: wrap; gap: .25rem; }
 .outfitter-market .nav-tab { padding-inline: .6rem; }
 .outfitter-market .market-heading { margin-top: 1rem; }
+.market-columns, .market-recruits { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr)); }
+.crew-heading { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.crew-heading h2 { margin-bottom: 0; }
+.crew-count { margin-top: .5rem; }
 .pirate-card { padding: .7rem .8rem; margin-top: .6rem; border: 1px solid #37545a; border-radius: 8px; background: #122b32; }
-.pirate-card-heading { display: flex; justify-content: space-between; align-items: start; gap: .75rem; }
+.pirate-card-heading { display: flex; align-items: start; gap: .55rem; }
+.pirate-card.selectable { position: relative; }
+.pirate-card.selectable:hover, .pirate-card.selectable:focus-within, .pirate-card.selected { border-color: var(--gold); }
+.pirate-card.selected { background: #283b37; }
+.pirate-identity { flex: 1; }
+.pirate-avatar { flex: 0 0 36px; width: 36px; aspect-ratio: 1; border-radius: 50%; background: #24444c; }
+.avatar-coat { fill: #4d7678; } .avatar-face { fill: #d5ad81; } .avatar-hat { fill: #16282d; stroke: #a48459; }
+.avatar-patch { fill: none; stroke: #16282d; stroke-width: 1.7; }
+.card-select { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; background: transparent; }
 .pirate-card small { color: var(--muted); display: block; }
 .pirate-rating { min-width: 3rem; text-align: right; }
 .pirate-rating b { color: var(--gold); font: 700 1.2rem Georgia, serif; }
@@ -195,8 +245,13 @@ p { color: var(--muted); }
 .shot.burning { fill: #ffcf62; stroke: #ff743d; stroke-width: 3; }
 
 @media (max-width: 880px) {
-    .dashboard, .dashboard.outfit { grid-template-columns: minmax(0, 1fr); }
+    .dashboard { grid-template-columns: minmax(0, 1fr); }
     .chart-side { grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr)); }
+}
+@media (max-width: 1040px) {
+    .outfit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "equipment crew" "layout layout" "market market"; }
+    .crew-roster { max-height: 17rem; overflow: auto; padding-right: .2rem; }
+    .equipment-tools { grid-template-columns: repeat(auto-fit, minmax(min(100%, 173px), 1fr)); }
 }
 @media (max-width: 530px) {
     .game-shell { width: calc(100% - 1.2rem); padding-top: .8rem; }
@@ -205,6 +260,17 @@ p { color: var(--muted); }
     .metrics div { flex: 1; }
     .chart { min-width: auto; }
     .chart-key, .panel-heading { padding-inline: .65rem; }
+    .outfit { gap: .55rem; }
+    .outfit .side-panel { padding: .55rem; }
+    .equipment-tools { gap: .3rem; }
+    .equipment-row { gap: .2rem; }
+    .equipment-tool { gap: .2rem; padding: .2rem; font-size: .8rem; }
+    .equipment-tool .equipment-icon { width: 21px; height: 21px; }
+    .equipment-buy { min-width: 1.9rem; min-height: 34px; padding-inline: .2rem; font-size: .8rem; }
+    .crew-roster { max-height: 13.5rem; }
+    .crew-roster .pirate-card { padding: .4rem; }
+    .crew-roster .pirate-avatar { flex-basis: 24px; width: 24px; }
+    .crew-roster .pirate-card-heading { flex-wrap: wrap; gap: .3rem; }
     .battle-status { grid-template-columns: 1fr 1fr; font-size: .8rem; padding-inline: .65rem; }
     .battle-status > span { grid-column: 1 / -1; grid-row: 2; }
     .battle-controls { padding-inline: .65rem; }
